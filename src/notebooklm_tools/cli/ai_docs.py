@@ -101,7 +101,7 @@ nlm status artifacts <notebook>
 | `nlm quiz` | Create quizzes (create) |
 | `nlm flashcards` | Create flashcards (create) |
 | `nlm mindmap` | Create mind maps (create) |
-| `nlm slides` | Create slide decks (create) |
+| `nlm slides` | Create and revise slide decks (create, revise) |
 | `nlm infographic` | Create infographics (create) |
 | `nlm video` | Create video overviews (create) |
 | `nlm data-table` | Create data tables (create) |
@@ -167,6 +167,7 @@ nlm login                              # Authenticate (opens browser)
 nlm login --profile work               # Named profile
 nlm login --manual --file <path>       # Import cookies from file
 nlm login --check                      # Only check if auth valid
+nlm login --provider openclaw --cdp-url http://127.0.0.1:18800  # External CDP provider
 
 nlm auth status                        # Check current auth
 nlm auth status --profile work         # Check specific profile
@@ -416,6 +417,15 @@ nlm create slides <notebook-id> --confirm
 nlm create slides <notebook-id> --length short --format detailed_deck --confirm
 ```
 
+#### Revise Slides
+
+**Noun-First:**
+```bash
+nlm slides revise <artifact-id> --slide '1 Make the title larger' --confirm
+nlm slides revise <artifact-id> --slide '1 Fix title' --slide '3 Remove image' --confirm
+# Creates a NEW slide deck with revisions applied. Original is not modified.
+```
+
 #### Infographic
 
 **Noun-First:**
@@ -470,6 +480,7 @@ nlm studio status <notebook-id>                    # List all artifacts + status
 nlm studio status <notebook-id> --json             # JSON output
 nlm studio status <notebook-id> --full             # All details
 nlm studio delete <notebook-id> <artifact-id> --confirm  # Delete artifact
+nlm slides revise <artifact-id> --slide '1 instruction' --confirm  # Revise slides
 ```
 
 **Verb-First:**
@@ -490,7 +501,8 @@ nlm download audio <notebook-id> --output podcast.mp3          # Download latest
 nlm download video <notebook-id>                               # Download latest video (default filename)
 nlm download report <notebook-id> --output report.md           # Download report
 nlm download mind-map <notebook-id>                            # Download mind map
-nlm download slide-deck <notebook-id>                          # Download slides
+nlm download slide-deck <notebook-id>                          # Download slides (PDF)
+nlm download slide-deck <notebook-id> --format pptx            # Download slides (PPTX)
 nlm download infographic <notebook-id>                         # Download infographic
 nlm download data-table <notebook-id>                          # Download data table
 ```
@@ -588,6 +600,8 @@ Install the NotebookLM skill for various AI coding assistants:
 nlm skill list                              # Show installation status for all tools
 nlm skill install <tool>                    # Install at user level (default)
 nlm skill install <tool> --level project    # Install at project level
+nlm skill update                            # Update all outdated skills
+nlm skill update <tool>                     # Update a specific tool's skill
 nlm skill uninstall <tool>                  # Remove installed skill
 nlm skill show                              # Display skill content
 ```
@@ -598,6 +612,8 @@ nlm skill show                              # Display skill content
 - `opencode` - OpenCode AI assistant (`~/.config/opencode/skills/nlm-skill/`)
 - `gemini-cli` - Google Gemini CLI (`~/.gemini/skills/nlm-skill/`)
 - `antigravity` - Antigravity agent framework (`~/.gemini/antigravity/skills/nlm-skill/`)
+- `cline` - Cline CLI terminal agent (`~/.cline/skills/nlm-skill/`)
+- `openclaw` - OpenClaw AI agent framework (`~/.openclaw/workplace/skills/nlm-skill/`)
 - `codex` - Codex AI assistant (appends to `~/.codex/AGENTS.md`)
 - `other` - Export all formats to `./nlm-skill-export/` for manual installation
 
@@ -636,6 +652,8 @@ For Codex, it appends a compact section to AGENTS.md with markers for easy remov
 ```bash
 nlm install skill claude-code              # Same as: nlm skill install claude-code
 nlm install skill cursor --level project  # Install for Cursor at project level
+nlm update skill                           # Same as: nlm skill update
+nlm update skill claude-code               # Same as: nlm skill update claude-code
 nlm uninstall skill gemini-cli             # Same as: nlm skill uninstall gemini-cli
 nlm list skills                            # Same as: nlm skill list
 nlm show skill                             # Same as: nlm skill show
@@ -677,10 +695,12 @@ nlm setup add claude-desktop            # Add to Claude Desktop config file
 nlm setup add gemini                    # Add to Gemini CLI config
 nlm setup add cursor                    # Add to Cursor config
 nlm setup add windsurf                  # Add to Windsurf config
+nlm setup add cline                     # Add to Cline CLI config
+nlm setup add antigravity               # Add to Antigravity config
 nlm setup remove <client>               # Remove MCP from client
 ```
 
-**Supported Clients:** claude-code, claude-desktop, gemini, cursor, windsurf, codex
+**Supported Clients:** claude-code, claude-desktop, gemini, cursor, windsurf, cline, antigravity, codex
 
 ---
 
@@ -838,7 +858,8 @@ nlm download audio <notebook-id> --id <audio-id>
 nlm download video <notebook-id> --id <video-id>
 nlm download report <notebook-id> --id <report-id>
 nlm download mind-map <notebook-id> --id <mindmap-id>
-nlm download slide-deck <notebook-id> --id <slides-id>
+nlm download slide-deck <notebook-id> --id <slides-id>             # PDF (default)
+nlm download slide-deck <notebook-id> --id <slides-id> --format pptx  # PPTX
 nlm download infographic <notebook-id> --id <infographic-id>
 ```
 

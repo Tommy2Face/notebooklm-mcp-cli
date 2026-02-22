@@ -3,6 +3,7 @@
 from typing import Any
 
 from ._utils import get_client, logged_tool
+from ...services import research as research_service, ServiceError
 
 
 @logged_tool()
@@ -27,37 +28,13 @@ def research_start(
     """
     try:
         client = get_client()
-
-        if source not in ("web", "drive"):
-            return {
-                "status": "error",
-                "error": f"Invalid source '{source}'. Use: web, drive",
-            }
-
-        if mode not in ("fast", "deep"):
-            return {
-                "status": "error",
-                "error": f"Invalid mode '{mode}'. Use: fast, deep",
-            }
-
-        result = client.start_research(
-            notebook_id=notebook_id,
-            query=query,
-            source=source,
-            mode=mode,
+        result = research_service.start_research(
+            client, notebook_id, query,
+            source=source, mode=mode,
         )
-
-        if result:
-            return {
-                "status": "success",
-                "task_id": result.get("task_id"),
-                "notebook_id": result.get("notebook_id"),
-                "query": query,
-                "source": source,
-                "mode": mode,
-                "message": f"Research started. Use research_status to check progress.",
-            }
-        return {"status": "error", "error": "Failed to start research"}
+        return {"status": "success", **result}
+    except ServiceError as e:
+        return {"status": "error", "error": e.user_message}
     except Exception as e:
         return {"status": "error", "error": str(e)}
 
@@ -85,36 +62,15 @@ def research_status(
     """
     try:
         client = get_client()
-        # Note: client.poll_research only supports notebook_id and target_task_id
-        # poll_interval and max_wait are documented but not implemented in client
-        result = client.poll_research(
-            notebook_id=notebook_id,
-            target_task_id=task_id,
-            target_query=query,
+        result = research_service.poll_research(
+            client, notebook_id,
+            task_id=task_id,
+            query=query,
+            compact=compact,
         )
-
-        if result:
-            sources = result.get("sources", [])
-            report = result.get("report", "")
-
-            # Compact mode: limit output
-            if compact:
-                if len(report) > 500:
-                    report = report[:500] + "...[truncated]"
-                if len(sources) > 5:
-                    sources = sources[:5]
-                    sources.append({"note": f"...and {len(result.get('sources', [])) - 5} more sources"})
-
-            return {
-                "status": result.get("status", "unknown"),
-                "notebook_id": notebook_id,
-                "task_id": result.get("task_id"),
-                "sources_found": len(result.get("sources", [])),
-                "sources": sources,
-                "report": report,
-                "message": "Use research_import to add sources to notebook." if result.get("status") == "completed" else None,
-            }
-        return {"status": "error", "error": "Failed to get research status"}
+        return result
+    except ServiceError as e:
+        return {"status": "error", "error": e.user_message}
     except Exception as e:
         return {"status": "error", "error": str(e)}
 
@@ -136,47 +92,12 @@ def research_import(
     """
     try:
         client = get_client()
-        
-        # First poll for the research results to get the sources
-        research_result = client.poll_research(
-            notebook_id=notebook_id,
-            target_task_id=task_id,
+        result = research_service.import_research(
+            client, notebook_id, task_id,
+            source_indices=source_indices,
         )
-        
-        if not research_result or research_result.get("status") == "no_research":
-            return {"status": "error", "error": "Research task not found or not completed"}
-        
-        all_sources = research_result.get("sources", [])
-        if not all_sources:
-            return {"status": "error", "error": "No sources found in research results"}
-        
-        # Filter by indices if provided
-        if source_indices is not None:
-            sources_to_import = []
-            for idx in source_indices:
-                if 0 <= idx < len(all_sources):
-                    sources_to_import.append(all_sources[idx])
-        else:
-            sources_to_import = all_sources
-        
-        if not sources_to_import:
-            return {"status": "error", "error": "No valid sources to import"}
-        
-        # Now call the client with the actual source dicts
-        result = client.import_research_sources(
-            notebook_id=notebook_id,
-            task_id=task_id,
-            sources=sources_to_import,
-        )
-
-        if result:
-            return {
-                "status": "success",
-                "notebook_id": notebook_id,
-                "imported_count": len(result),
-                "imported_sources": result,
-                "message": f"Imported {len(result)} sources.",
-            }
-        return {"status": "error", "error": "Failed to import sources"}
+        return {"status": "success", **result}
+    except ServiceError as e:
+        return {"status": "error", "error": e.user_message}
     except Exception as e:
         return {"status": "error", "error": str(e)}

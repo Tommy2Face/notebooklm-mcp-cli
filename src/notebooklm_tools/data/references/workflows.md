@@ -140,11 +140,11 @@ nlm report create <notebook-id> --format "Study Guide" --confirm
 sleep 5
 
 # Step 3: Generate quiz (10 questions, medium difficulty)
-nlm quiz create <notebook-id> --count 10 --difficulty 3 --confirm
+nlm quiz create <notebook-id> --count 10 --difficulty 3 --focus "Comprehensive review" --confirm
 sleep 3
 
 # Step 4: Generate flashcards
-nlm flashcards create <notebook-id> --difficulty medium --confirm
+nlm flashcards create <notebook-id> --difficulty medium --focus "Important definitions" --confirm
 sleep 3
 
 # Step 5: Generate mind map for visual overview

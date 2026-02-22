@@ -1,8 +1,11 @@
 """Skill installer commands for NotebookLM CLI."""
 
+import re
 import shutil
 from pathlib import Path
 from typing import Literal, Optional
+
+from notebooklm_tools import __version__
 
 import typer
 from rich.console import Console
@@ -52,6 +55,18 @@ TOOL_CONFIGS = {
         "project": Path(".agent/skills/nlm-skill"),
         "format": "skill.md",
         "description": "Antigravity agent framework",
+    },
+    "cline": {
+        "user": Path.home() / ".cline/skills/nlm-skill",
+        "project": Path(".cline/skills/nlm-skill"),
+        "format": "skill.md",
+        "description": "Cline CLI terminal agent",
+    },
+    "openclaw": {
+        "user": Path.home() / ".openclaw/workplace/skills/nlm-skill",
+        "project": Path(".openclaw/workplace/skills/nlm-skill"),
+        "format": "skill.md",
+        "description": "OpenClaw AI agent framework",
     },
     "other": {
         "project": Path("./nlm-skill-export"),
@@ -117,6 +132,82 @@ def check_install_status(tool: str, level: str = "user") -> tuple[bool, Optional
     return False, None
 
 
+def _inject_version_to_frontmatter(skill_path: Path) -> None:
+    """Inject the current package version into the SKILL.md YAML frontmatter."""
+    content = skill_path.read_text()
+    if content.startswith("---"):
+        # Find the closing --- of frontmatter
+        end_idx = content.index("---", 3)
+        frontmatter = content[3:end_idx]
+        # Remove any existing version line
+        frontmatter = re.sub(r"\nversion:.*", "", frontmatter)
+        # Add version before closing ---
+        frontmatter = frontmatter.rstrip() + f"\nversion: \"{__version__}\"\n"
+        content = "---" + frontmatter + "---" + content[end_idx + 3:]
+    else:
+        # No frontmatter — prepend one with version
+        content = f"---\nversion: \"{__version__}\"\n---\n\n" + content
+    skill_path.write_text(content)
+
+
+def _get_installed_version(tool: str, level: str) -> Optional[str]:
+    """Read the version from an installed skill. Returns None if not found."""
+    config = TOOL_CONFIGS[tool]
+    install_path = config.get(level)
+    if not install_path:
+        return None
+
+    format_type = config["format"]
+
+    if format_type == "agents.md":
+        if not install_path.exists():
+            return None
+        try:
+            content = install_path.read_text()
+            match = re.search(r'<!-- nlm-version: ([\d.]+) -->', content)
+            return match.group(1) if match else None
+        except Exception:
+            return None
+    elif format_type == "skill.md":
+        skill_file = install_path / "SKILL.md"
+    elif format_type == "all":
+        skill_file = install_path / "nlm-skill" / "SKILL.md"
+    else:
+        return None
+
+    if not skill_file.exists():
+        return None
+
+    try:
+        content = skill_file.read_text()
+        match = re.search(r'version:\s*"([^"]*)"', content)
+        return match.group(1) if match else None
+    except Exception:
+        return None
+
+
+def _inject_version_to_agents_md(agents_path: Path) -> None:
+    """Inject a version comment into the NLM section of AGENTS.md."""
+    try:
+        content = agents_path.read_text()
+        version_comment = f"<!-- nlm-version: {__version__} -->"
+
+        # Remove any existing version comment
+        content = re.sub(r'<!-- nlm-version: [\d.]+ -->\n?', '', content)
+
+        # Insert version comment right after the start marker
+        start_marker = "<!-- nlm-skill-start -->"
+        if start_marker in content:
+            content = content.replace(
+                start_marker,
+                f"{start_marker}\n{version_comment}",
+            )
+            agents_path.write_text(content)
+    except Exception:
+        pass
+
+
+
 def install_skill_md(install_path: Path) -> None:
     """Install SKILL.md format to a directory."""
     data_dir = get_data_dir()
@@ -129,6 +220,9 @@ def install_skill_md(install_path: Path) -> None:
     skill_dst = install_path / "SKILL.md"
     shutil.copy2(skill_src, skill_dst)
 
+    # Inject current version into frontmatter
+    _inject_version_to_frontmatter(skill_dst)
+
     # Copy references directory
     ref_src = data_dir / "references"
     ref_dst = install_path / "references"
@@ -136,7 +230,7 @@ def install_skill_md(install_path: Path) -> None:
         shutil.rmtree(ref_dst)
     shutil.copytree(ref_src, ref_dst)
 
-    console.print(f"[green]✓[/green] Installed SKILL.md to {install_path}")
+    console.print(f"[green]✓[/green] Installed SKILL.md (v{__version__}) to {install_path}")
     console.print(f"  [dim]• SKILL.md")
     console.print(f"  [dim]• references/command_reference.md")
     console.print(f"  [dim]• references/troubleshooting.md")
@@ -179,6 +273,10 @@ def install_agents_md(install_path: Path) -> None:
         content = section_content + "\n"
 
     install_path.write_text(content)
+
+    # Inject version marker into the NLM section
+    _inject_version_to_agents_md(install_path)
+
     console.print(f"[green]✓[/green] Updated AGENTS.md at {install_path}")
     console.print(f"  [dim]• NLM section appended with markers")
 
@@ -485,12 +583,29 @@ def list_tools() -> None:
     table.add_column("User", justify="center")
     table.add_column("Project", justify="center")
 
+    has_outdated = False
+
     for tool, config in TOOL_CONFIGS.items():
+        # Skip "other" — it's an export format, not a real install target
+        if tool == "other":
+            continue
+
         # Check user level
         user_status = ""
         if "user" in config:
             is_installed, _ = check_install_status(tool, "user")
-            user_status = "[green]✓[/green]" if is_installed else "[dim]-[/dim]"
+            if is_installed:
+                installed_ver = _get_installed_version(tool, "user")
+                if installed_ver is None:
+                    user_status = "[yellow]✓ (unknown)[/yellow]"
+                    has_outdated = True
+                elif installed_ver != __version__:
+                    user_status = f"[yellow]✓ (v{installed_ver})[/yellow]"
+                    has_outdated = True
+                else:
+                    user_status = "[green]✓[/green]"
+            else:
+                user_status = "[dim]-[/dim]"
         else:
             user_status = "[dim]N/A[/dim]"
 
@@ -498,7 +613,18 @@ def list_tools() -> None:
         project_status = ""
         if "project" in config:
             is_installed, _ = check_install_status(tool, "project")
-            project_status = "[green]✓[/green]" if is_installed else "[dim]-[/dim]"
+            if is_installed:
+                installed_ver = _get_installed_version(tool, "project")
+                if installed_ver is None:
+                    project_status = "[yellow]✓ (unknown)[/yellow]"
+                    has_outdated = True
+                elif installed_ver != __version__:
+                    project_status = f"[yellow]✓ (v{installed_ver})[/yellow]"
+                    has_outdated = True
+                else:
+                    project_status = "[green]✓[/green]"
+            else:
+                project_status = "[dim]-[/dim]"
         else:
             project_status = "[dim]N/A[/dim]"
 
@@ -511,6 +637,97 @@ def list_tools() -> None:
 
     console.print(table)
     console.print("\n[dim]Legend: ✓ = installed, - = not installed, N/A = not applicable[/dim]")
+    if has_outdated:
+        console.print(f"[yellow]⚠  Some skills are outdated (current: v{__version__}). Run 'nlm skill update' to update all.[/yellow]")
+
+
+def _update_single_tool(tool: str, level: str) -> bool:
+    """Update a single tool's skill at the given level. Returns True if updated."""
+    config = TOOL_CONFIGS[tool]
+    install_path = config.get(level)
+    if not install_path:
+        return False
+
+    format_type = config["format"]
+
+    try:
+        if format_type == "skill.md":
+            install_skill_md(install_path)
+        elif format_type == "agents.md":
+            install_agents_md(install_path)
+        elif format_type == "all":
+            install_all_formats(install_path)
+        return True
+    except Exception as e:
+        console.print(f"[red]Error updating {tool} ({level}):[/red] {e}")
+        return False
+
+
+@app.command("update")
+def update(
+    tool: Optional[str] = typer.Argument(
+        None,
+        help="Tool to update (omit to update all outdated skills)",
+        shell_complete=complete_tool_name,
+    ),
+) -> None:
+    """
+    Update outdated skills to the current version.
+
+    Examples:
+        nlm skill update              # Update all outdated skills
+        nlm skill update claude-code  # Update just Claude Code
+    """
+    if tool and tool not in TOOL_CONFIGS:
+        valid_tools = ", ".join(TOOL_CONFIGS.keys())
+        console.print(f"[red]Error:[/red] Unknown tool '{tool}'")
+        console.print(f"Valid tools: {valid_tools}")
+        raise typer.Exit(1)
+
+    tools_to_check = {tool: TOOL_CONFIGS[tool]} if tool else TOOL_CONFIGS
+    updated = 0
+    skipped = 0
+    already_current = 0
+
+    for t, config in tools_to_check.items():
+        for level in ("user", "project"):
+            if level not in config:
+                continue
+
+            is_installed, _ = check_install_status(t, level)
+            if not is_installed:
+                continue
+
+            installed_ver = _get_installed_version(t, level)
+            if installed_ver == __version__:
+                already_current += 1
+                if tool:
+                    # Only show this message when updating a specific tool
+                    console.print(f"[green]✓[/green] {t} ({level}) is already at v{__version__}")
+                continue
+
+            old_ver = installed_ver or "unknown"
+            console.print(f"\n[bold]Updating {t} ({level}):[/bold] v{old_ver} → v{__version__}")
+            if _update_single_tool(t, level):
+                updated += 1
+            else:
+                skipped += 1
+
+    # Summary
+    console.print()
+    if updated == 0 and already_current > 0 and skipped == 0:
+        console.print(f"[green]All installed skills are already at v{__version__} ✓[/green]")
+    elif updated > 0:
+        console.print(f"[green]✓ Updated {updated} skill(s) to v{__version__}[/green]")
+        if skipped > 0:
+            console.print(f"[yellow]⚠ {skipped} skill(s) failed to update[/yellow]")
+    elif skipped > 0:
+        console.print(f"[red]✗ {skipped} skill(s) failed to update[/red]")
+    else:
+        if tool:
+            console.print(f"[dim]{tool} is not installed. Use 'nlm skill install {tool}' first.[/dim]")
+        else:
+            console.print("[dim]No installed skills found to update.[/dim]")
 
 
 @app.command("show")

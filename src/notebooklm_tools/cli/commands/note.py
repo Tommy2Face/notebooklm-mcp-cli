@@ -9,6 +9,7 @@ from rich.table import Table
 from notebooklm_tools.core.alias import get_alias_manager
 from notebooklm_tools.core.exceptions import NLMError
 from notebooklm_tools.cli.utils import get_client
+from notebooklm_tools.services import notes as notes_service, ServiceError
 
 console = Console()
 app = typer.Typer(
@@ -29,14 +30,16 @@ def list_notes(
     try:
         notebook_id = get_alias_manager().resolve(notebook_id)
         with get_client(profile) as client:
-            notes = client.list_notes(notebook_id)
+            result = notes_service.list_notes(client, notebook_id)
+
+        notes = result["notes"]
 
         if quiet:
             for note in notes:
                 console.print(note['id'])
         elif json_output:
             import json
-            console.print(json.dumps(notes, indent=2))
+            console.print(json.dumps(result, indent=2))
         else:
             if not notes:
                 console.print(f"[dim]No notes found in notebook {notebook_id}[/dim]")
@@ -54,7 +57,11 @@ def list_notes(
                 table.add_row(note['id'][:8] + "...", note.get('title', 'Untitled'), preview)
 
             console.print(table)
-            console.print(f"\n[dim]Total: {len(notes)} note(s)[/dim]")
+            console.print(f"\n[dim]Total: {result['count']} note(s)[/dim]")
+
+    except ServiceError as e:
+        console.print(f"[red]Error:[/red] {e.user_message}")
+        raise typer.Exit(1)
     except NLMError as e:
         console.print(f"[red]Error:[/red] {e.message}")
         if e.hint:
@@ -73,15 +80,15 @@ def create_note(
     try:
         notebook_id = get_alias_manager().resolve(notebook_id)
         with get_client(profile) as client:
-            result = client.create_note(notebook_id, content, title)
+            result = notes_service.create_note(client, notebook_id, content, title)
 
-        if result:
-            console.print(f"[green]✓[/green] Note created: {result['id']}")
-            console.print(f"  Title: {result['title']}")
-            console.print(f"  Preview: {result.get('content', '')[:100]}...")
-        else:
-            console.print("[red]Failed to create note[/red]")
-            raise typer.Exit(1)
+        console.print(f"[green]✓[/green] Note created: {result['note_id']}")
+        console.print(f"  Title: {result['title']}")
+        console.print(f"  Preview: {result['content_preview']}")
+
+    except ServiceError as e:
+        console.print(f"[red]Error:[/red] {e.user_message}")
+        raise typer.Exit(1)
     except NLMError as e:
         console.print(f"[red]Error:[/red] {e.message}")
         if e.hint:
@@ -98,24 +105,16 @@ def update_note(
     profile: Optional[str] = typer.Option(None, "--profile", "-p", help="Profile to use"),
 ) -> None:
     """Update a note's content or title."""
-    if not content and not title:
-        console.print("[red]Error:[/red] Must provide --content or --title")
-        raise typer.Exit(1)
-
     try:
         notebook_id = get_alias_manager().resolve(notebook_id)
         with get_client(profile) as client:
-            result = client.update_note(note_id, content, title, notebook_id)
+            result = notes_service.update_note(client, notebook_id, note_id, content, title)
 
-        if result:
-            console.print(f"[green]✓[/green] Note updated: {note_id}")
-            if title:
-                console.print(f"  New title: {title}")
-            if content:
-                console.print(f"  Content updated ({len(content)} chars)")
-        else:
-            console.print("[red]Failed to update note[/red]")
-            raise typer.Exit(1)
+        console.print(f"[green]✓[/green] {result['message']}")
+
+    except ServiceError as e:
+        console.print(f"[red]Error:[/red] {e.user_message}")
+        raise typer.Exit(1)
     except NLMError as e:
         console.print(f"[red]Error:[/red] {e.message}")
         if e.hint:
@@ -140,13 +139,13 @@ def delete_note(
     try:
         notebook_id = get_alias_manager().resolve(notebook_id)
         with get_client(profile) as client:
-            result = client.delete_note(note_id, notebook_id)
+            result = notes_service.delete_note(client, notebook_id, note_id)
 
-        if result:
-            console.print(f"[green]✓[/green] Note deleted: {note_id}")
-        else:
-            console.print("[red]Failed to delete note[/red]")
-            raise typer.Exit(1)
+        console.print(f"[green]✓[/green] {result['message']}")
+
+    except ServiceError as e:
+        console.print(f"[red]Error:[/red] {e.user_message}")
+        raise typer.Exit(1)
     except NLMError as e:
         console.print(f"[red]Error:[/red] {e.message}")
         if e.hint:

@@ -331,19 +331,58 @@ class StudioMixin(BaseClient):
                     self.STUDIO_TYPE_DATA_TABLE: "data_table",
                 }
                 artifact_type = "quiz" if is_quiz else type_map.get(type_code, "unknown")
-                status = "in_progress" if status_code == 1 else "completed" if status_code == 3 else "unknown"
+                status_map = {
+                    1: "in_progress",
+                    3: "completed",
+                    4: "failed",
+                }
+                status = status_map.get(status_code, "unknown")
+
 
                 # Extract custom_instructions (focus prompt) if present
-                # Custom prompt is stored at artifact_data[STUDIO_ARTIFACT_FOCUS_INDEX][1][0] for artifacts that have one
+                # Different artifact types store prompts at different indices:
+                # - Audio: artifact_data[6][1][0]
+                # - Video: artifact_data[8][2][2]
+                # - Slides: artifact_data[16][0][0]
+                # - Quiz/Flashcards: artifact_data[9][1][1]
                 custom_instructions = None
                 
-                if len(artifact_data) > constants.STUDIO_ARTIFACT_FOCUS_INDEX:
-                    options_data = artifact_data[constants.STUDIO_ARTIFACT_FOCUS_INDEX]
+                if type_code == self.STUDIO_TYPE_AUDIO and len(artifact_data) > 6:
+                    options_data = artifact_data[6]
                     if isinstance(options_data, list) and len(options_data) > 1:
                         inner = options_data[1]
                         if isinstance(inner, list) and len(inner) > 0:
                             if isinstance(inner[0], str) and inner[0]:
                                 custom_instructions = inner[0]
+                
+                elif type_code == self.STUDIO_TYPE_VIDEO and len(artifact_data) > 8:
+                    options_data = artifact_data[8]
+                    if isinstance(options_data, list) and len(options_data) > 2:
+                        inner = options_data[2]
+                        if isinstance(inner, list) and len(inner) > 2:
+                            if isinstance(inner[2], str) and inner[2]:
+                                custom_instructions = inner[2]
+                
+                elif type_code == self.STUDIO_TYPE_SLIDE_DECK and len(artifact_data) > 16:
+                    options_data = artifact_data[16]
+                    if isinstance(options_data, list) and len(options_data) > 0:
+                        inner = options_data[0]
+                        if isinstance(inner, list) and len(inner) > 0:
+                            if isinstance(inner[0], str) and inner[0]:
+                                custom_instructions = inner[0]
+                
+                elif type_code == self.STUDIO_TYPE_FLASHCARDS and len(artifact_data) > 9:
+                    # Quiz and Flashcards both use type 4, stored at position 9
+                    # Format: ['', [format_code, None, 'prompt_text', 'lang', ...]]
+                    options_data = artifact_data[9]
+                    if isinstance(options_data, list) and len(options_data) > 1:
+                        inner = options_data[1]
+                        if isinstance(inner, list) and len(inner) > 2:
+                            if isinstance(inner[2], str) and inner[2]:
+                                custom_instructions = inner[2].strip()  # Strip whitespace/newlines
+
+
+
 
                 artifacts.append({
                     "artifact_id": artifact_id,
@@ -449,13 +488,55 @@ class StudioMixin(BaseClient):
         # Payload structure discovered via browser network intercept:
         # [[ "<artifact_id>", "<new_title>" ], [["title"]]]
         params = [[artifact_id, new_title], [["title"]]]
-        
+
         try:
             result = self._call_rpc(self.RPC_RENAME_ARTIFACT, params)
             return result is not None
         except Exception:
             return False
 
+    def revise_slide_deck(
+        self,
+        artifact_id: str,
+        slide_instructions: list[tuple[int, str]],
+    ) -> dict | None:
+        """Revise an existing slide deck with per-slide instructions.
+
+        Creates a NEW slide deck artifact with the requested changes applied.
+        The original artifact is not modified.
+
+        Args:
+            artifact_id: UUID of the existing slide deck to revise
+            slide_instructions: List of (0-based_index, instruction) tuples.
+                Each tuple specifies which slide to change and how.
+
+        Returns:
+            Dict with new artifact_id, title, and status, or None on failure
+        """
+        # RPC KmcKPe params: [[2], artifact_id, [[[slide_index, instruction], ...]]]
+        instruction_pairs = [[idx, text] for idx, text in slide_instructions]
+        params = [[2], artifact_id, [instruction_pairs]]
+
+        result = self._call_rpc(
+            self.RPC_REVISE_SLIDE_DECK,
+            params,
+        )
+
+        if result and isinstance(result, list) and len(result) > 0:
+            artifact_data = result[0]
+            if isinstance(artifact_data, list) and len(artifact_data) > 0:
+                new_artifact_id = artifact_data[0]
+                title = artifact_data[2] if len(artifact_data) > 2 else None
+                status_code = artifact_data[4] if len(artifact_data) > 4 else None
+
+                return {
+                    "artifact_id": new_artifact_id,
+                    "title": title,
+                    "original_artifact_id": artifact_id,
+                    "status": "in_progress" if status_code == 1 else "completed" if status_code == 3 else "unknown",
+                }
+
+        return None
 
     def create_infographic(
         self,
@@ -716,6 +797,7 @@ class StudioMixin(BaseClient):
         notebook_id: str,
         source_ids: list[str] | None = None,
         difficulty_code: int = 2,  # FLASHCARD_DIFFICULTY_MEDIUM
+        focus_prompt: str = "",
     ) -> dict | None:
         """Create Flashcards from notebook sources."""
         client = self._get_client()
@@ -733,12 +815,13 @@ class StudioMixin(BaseClient):
         # Card count code (default = 2)
         count_code = constants.FLASHCARD_COUNT_DEFAULT
 
-        # Options at position 9: [null, [1, null*5, [difficulty, card_count]]]
+        # Options at position 9: [null, [1, focus_prompt, null*4, [difficulty, card_count]]]
         flashcard_options = [
             None,
             [
                 1,  # Unknown (possibly default count base)
-                None, None, None, None, None,
+                focus_prompt or None,  # Focus prompt
+                None, None, None, None,
                 [difficulty_code, count_code]
             ]
         ]
@@ -787,6 +870,7 @@ class StudioMixin(BaseClient):
         source_ids: list[str] | None = None,
         question_count: int = 2,
         difficulty: int = 2,
+        focus_prompt: str = "",
     ) -> dict | None:
         """Create Quiz from notebook sources.
 
@@ -795,6 +879,7 @@ class StudioMixin(BaseClient):
             source_ids: List of source UUIDs (defaults to all sources)
             question_count: Number of questions (default: 2)
             difficulty: Difficulty level (default: 2)
+            focus_prompt: Optional focus prompt to guide quiz generation
         """
         client = self._get_client()
 
@@ -807,12 +892,13 @@ class StudioMixin(BaseClient):
 
         sources_nested = [[[sid]] for sid in source_ids]
 
-        # Quiz options at position 9: [null, [2, null*6, [question_count, difficulty]]]
+        # Quiz options at position 9: [null, [2, focus_prompt, null*5, [question_count, difficulty]]]
         quiz_options = [
             None,
             [
                 2,  # Format/variant code
-                None, None, None, None, None, None,
+                focus_prompt or None,  # Focus prompt
+                None, None, None, None, None,
                 [question_count, difficulty]
             ]
         ]

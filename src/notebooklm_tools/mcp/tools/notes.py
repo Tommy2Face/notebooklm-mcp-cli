@@ -2,6 +2,7 @@
 
 from typing import Any
 from ._utils import get_client, logged_tool
+from ...services import notes as notes_service, ServiceError, ValidationError
 
 
 @logged_tool()
@@ -38,7 +39,7 @@ def note(
         note(notebook_id="abc", action="update", note_id="xyz", content="Updated")
         note(notebook_id="abc", action="delete", note_id="xyz", confirm=True)
     """
-    valid_actions = ["create", "list", "update", "delete"]
+    valid_actions = ("create", "list", "update", "delete")
 
     if action not in valid_actions:
         return {
@@ -50,48 +51,18 @@ def note(
         client = get_client()
 
         if action == "create":
-            if not content:
-                return {"status": "error", "error": "content is required for action='create'"}
-
-            result = client.create_note(notebook_id, content, title)
-
-            if result and result.get("id"):
-                return {
-                    "status": "success",
-                    "action": "create",
-                    "note_id": result["id"],
-                    "title": result.get("title", ""),
-                    "content_preview": content[:100] if len(content) > 100 else content,
-                }
-            return {"status": "error", "error": "Failed to create note"}
+            result = notes_service.create_note(client, notebook_id, content or "", title)
+            return {"status": "success", "action": "create", **result}
 
         elif action == "list":
-            notes = client.list_notes(notebook_id)
-
-            return {
-                "status": "success",
-                "action": "list",
-                "notebook_id": notebook_id,
-                "notes": notes,
-                "count": len(notes),
-            }
+            result = notes_service.list_notes(client, notebook_id)
+            return {"status": "success", "action": "list", **result}
 
         elif action == "update":
             if not note_id:
                 return {"status": "error", "error": "note_id is required for action='update'"}
-            if content is None and title is None:
-                return {"status": "error", "error": "Must provide content or title to update"}
-
-            result = client.update_note(note_id, content, title, notebook_id)
-
-            if result:
-                return {
-                    "status": "success",
-                    "action": "update",
-                    "note_id": note_id,
-                    "updated": True,
-                }
-            return {"status": "error", "error": "Failed to update note"}
+            result = notes_service.update_note(client, notebook_id, note_id, content, title)
+            return {"status": "success", "action": "update", **result}
 
         elif action == "delete":
             if not note_id:
@@ -102,18 +73,12 @@ def note(
                     "error": "Deletion not confirmed. Set confirm=True after user approval.",
                     "warning": "This action is IRREVERSIBLE.",
                 }
-
-            result = client.delete_note(note_id, notebook_id)
-
-            if result:
-                return {
-                    "status": "success",
-                    "action": "delete",
-                    "message": f"Note {note_id} has been permanently deleted.",
-                }
-            return {"status": "error", "error": "Failed to delete note"}
+            result = notes_service.delete_note(client, notebook_id, note_id)
+            return {"status": "success", "action": "delete", **result}
 
         return {"status": "error", "error": f"Unhandled action: {action}"}
 
+    except (ServiceError, ValidationError) as e:
+        return {"status": "error", "error": e.user_message}
     except Exception as e:
         return {"status": "error", "error": str(e)}

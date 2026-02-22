@@ -5,6 +5,100 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.5] - 2026-02-21
+
+### Added
+- **Slide Deck Revision (`studio_revise`)** — Revise individual slides in an existing slide deck via new RPC `KmcKPe`. Creates a new artifact with revisions applied; original is never modified.
+  - MCP tool: `studio_revise` with `artifact_id`, `slide_instructions`, and `confirm` params
+  - CLI: `nlm slides revise <artifact-id> --slide '1 Make the title larger' --confirm`
+- **PPTX Download Support** — Download slide decks as PowerPoint (PPTX) in addition to PDF.
+  - CLI: `nlm download slide-deck <notebook> --format pptx`
+  - MCP: `download_artifact` with `slide_deck_format="pptx"`
+- **Login Profile Protection** — Account mismatch guard prevents accidentally overwriting a profile with credentials from a different Google account. Use `--force` to override.
+- **Reused Chrome Warning** — `nlm login` now warns when connecting to an existing Chrome instance instead of launching a fresh one.
+
+### Changed
+- **Faster Login** — Connection pooling and reduced sleep durations cut `nlm login` time from ~25s to under 3s. Thanks to **@pjeby** for this contribution (PR #54).
+
+## [0.3.4] - 2026-02-19
+
+### Fixed
+- **`nlm login` hang on fresh install** - Optimized Chrome port availability scanning (using `socket.bind` instead of `httpx.get`) to avoid 20+ second timeouts on systems that drop network packets. Thanks to **@pjeby** for the diagnosis (closes #52)
+- **Chrome "Restore Pages" Warning** - `nlm login` and headless authentication now perform a graceful shutdown of Chrome via CDP (`Browser.close`) rather than abruptly killing the process, resolving crashes on next browser start. Again, great work by **@pjeby** (fixes #52)
+
+## [0.3.3] - 2026-02-16
+
+### Fixed
+- **OpenClaw skill path** - Fixed incorrect installation path for OpenClaw skills. Now correctly uses `~/.openclaw/workplace/skills/` instead of `~/.openclaw/skills/`.
+
+## [0.3.2] - 2026-02-14
+
+### Added
+- **Focus Prompt Support** - Added `--focus` parameter to `nlm quiz create` and `nlm flashcards create` commands to specify custom instructions.
+- **Improved Prompt Extraction** - `studio_status` now correctly extracts custom prompts for all artifact types (Audio, Video, Slides, Quiz, Flashcards).
+
+### Fixed
+- **Quiz/Flashcard Prompt Extraction** - Fixed a bug where custom instructions were not being extracted for Quiz and Flashcards artifacts (wrong API index).
+
+## [0.3.1] - 2026-02-14
+
+### Added
+- **New AI Client Support** — Added `nlm skill install` support for:
+  - **Cline** (`~/.cline/skills`) - Terminal-based AI agent
+  - **Antigravity** (`~/.gemini/antigravity/skills`) - Advanced agentic framework
+  - **OpenClaw** (`~/.openclaw/workplace/skills`) - Autonomous AI agent
+  - **Codex** (`~/.codex/AGENTS.md`) - Now with version tracking
+- **`nlm setup` support** — Added automatic MCP configuration for:
+  - **Cline** (`nlm setup add cline`)
+  - **Antigravity** (`nlm setup add antigravity`)
+- **`nlm skill update` command** - Update installed AI skills to the latest version. Supports updating all skills or specific tools (e.g., `nlm skill update claude-code`).
+- **Verb-first alias** - `nlm update skill` works identically to `nlm skill update`.
+- **Version tracking** - `AGENTS.md` formats now support version tracking via injected comments.
+
+### Fixed
+- **Skill version validation** - `nlm skill list` now correctly identifies outdated skills and prevents "unknown" version status for Codex.
+- **Package version** - Bumped to `0.3.1` to match release tag.
+
+## [0.3.0] - 2026-02-13
+
+### Added
+- **Shared service layer** (`services/`) — 10 domain modules centralizing all business logic previously duplicated across CLI and MCP:
+  - `errors.py`: Custom error hierarchy (`ServiceError`, `ValidationError`, `NotFoundError`, `CreationError`, `ExportError`)
+  - `chat.py`: Chat configuration and notebook query logic
+  - `downloads.py`: Artifact downloading with type/format resolution
+  - `exports.py`: Google Docs/Sheets export
+  - `notebooks.py`: Notebook CRUD, describe, query consolidation
+  - `notes.py`: Note CRUD operations
+  - `research.py`: Research start, polling, and source import
+  - `sharing.py`: Public link, invite, and status management
+  - `sources.py`: Source add/list/sync/delete with type validation
+  - `studio.py`: Unified artifact creation (all 9 types), status, rename, delete
+- **372 unit tests** covering all service modules (up from 331)
+
+### Changed
+- **Architecture: strict layering** — `cli/` and `mcp/` are now thin wrappers delegating to `services/`. Neither imports from `core/` directly.
+- **MCP tools refactored** — Significant line count reductions across all tool files (e.g., studio 461→200 lines)
+- **CLI commands refactored** — Business logic extracted to services, CLI retains only UX concerns (prompts, spinners, formatting)
+- **Contributing workflow updated** — New features follow: `core/client.py` → `services/*.py` → `mcp/tools/*.py` + `cli/commands/*.py` → `tests/services/`
+
+## [0.2.22] - 2026-02-13
+
+### Fixed
+- **Fail-fast for all studio create commands** — Audio, report, quiz, flashcards, slides, video, and data-table creation now exit non-zero with a clear error when the backend returns no artifact, instead of silently reporting success. Extends the infographic fix from v0.2.21 to all artifact types (closes #33)
+
+## [0.2.21] - 2026-02-13
+
+### Added
+- **OpenClaw CDP login provider** — `nlm login --provider openclaw --cdp-url <url>` allows authentication via an already-running Chrome CDP endpoint (e.g., OpenClaw-managed browser sessions) instead of launching a separate Chrome instance. Thanks to **@kmfb** for this contribution (PR #47)
+- **CLI Guide documentation for `nlm setup` and `nlm doctor`** — Added Setup and Doctor command reference sections, updated workflow example, and added tips. Cherry-picked from PR #48 by **@997unix**
+
+### Fixed
+- **Infographic create false success** — `nlm infographic create` now exits non-zero with a clear error when the backend returns `UserDisplayableError` and no artifact, instead of silently reporting success (closes #46). Thanks to **@kmfb** (PR #47)
+- **Studio status code 4 mapping** — Studio artifact status code `4` now maps to `"failed"` instead of `"unknown"`, making artifact failures visible during polling. By **@kmfb** (PR #47)
+
+### Changed
+- **CDP websocket compatibility** — WebSocket connections now use `suppress_origin=True` for compatibility with managed Chrome endpoints, with fallback for older `websocket-client` versions
+
 ## [0.2.20] - 2026-02-11
 
 ### Added

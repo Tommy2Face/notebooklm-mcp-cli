@@ -48,7 +48,7 @@ from notebooklm_tools.cli.commands.studio import (
 )
 from notebooklm_tools.cli.commands.research import (
     start_research,
-    research_status,
+    check_status as research_status,
     import_research,
 )
 from notebooklm_tools.cli.commands.chat import (
@@ -77,6 +77,7 @@ from notebooklm_tools.cli.commands.config import (
 from notebooklm_tools.cli.commands.skill import (
     install as skill_install,
     uninstall as skill_uninstall,
+    update as skill_update,
     list_tools as skill_list,
     show as skill_show,
 )
@@ -927,4 +928,22 @@ def uninstall_skill_verb(
 ) -> None:
     """Remove installed NotebookLM skill."""
     skill_uninstall(tool=tool, level=level)
+
+
+# =============================================================================
+# UPDATE verb (for skills)
+# =============================================================================
+
+update_app = typer.Typer(help="Update resources (skills)")
+
+
+@update_app.command("skill")
+def update_skill_verb(
+    tool: Optional[str] = typer.Argument(
+        None,
+        help="Tool to update (omit to update all outdated skills)",
+    ),
+) -> None:
+    """Update outdated skills to the current version."""
+    skill_update(tool=tool)
 

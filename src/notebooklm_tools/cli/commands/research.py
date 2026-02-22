@@ -9,6 +9,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from notebooklm_tools.core.alias import get_alias_manager
 from notebooklm_tools.core.exceptions import NLMError
 from notebooklm_tools.cli.utils import get_client
+from notebooklm_tools.services import research as research_service, ServiceError
 
 console = Console()
 app = typer.Typer(
@@ -50,24 +51,7 @@ def start_research(
     for your research topic. Use 'nlm research status' to check progress
     and 'nlm research import' to add discovered sources to your notebook.
     """
-    # Validate source
-    if source not in ["web", "drive"]:
-        console.print("[red]Error:[/red] Source must be 'web' or 'drive'")
-        raise typer.Exit(1)
-    
-    # Validate mode
-    if mode not in ["fast", "deep"]:
-        console.print("[red]Error:[/red] Mode must be 'fast' or 'deep'")
-        raise typer.Exit(1)
-    
-    # Validate deep mode restriction
-    if mode == "deep" and source != "web":
-        console.print("[red]Error:[/red] Deep research mode is only available for web sources")
-        console.print("[dim]Use --mode fast for Drive search, or --source web for deep research.[/dim]")
-        raise typer.Exit(1)
-    
     try:
-        # notebook_id is required for research
         if not notebook_id:
             console.print("[red]Error:[/red] --notebook-id is required for research")
             raise typer.Exit(1)
@@ -75,7 +59,7 @@ def start_research(
         notebook_id = get_alias_manager().resolve(notebook_id)
         
         with get_client(profile) as client:
-            # Check for existing research before starting new one
+            # Check for existing research before starting new one (CLI-only UX)
             if not force:
                 existing = client.poll_research(notebook_id)
                 if existing and existing.get("status") == "in_progress":
@@ -93,27 +77,24 @@ def start_research(
                     console.print("[dim]Or run 'nlm research import' to save the existing results first.[/dim]")
                     raise typer.Exit(1)
             
-            task = client.start_research(
-                notebook_id=notebook_id,
-                query=query,
-                source=source,
-                mode=mode,
+            result = research_service.start_research(
+                client, notebook_id, query,
+                source=source, mode=mode,
             )
-        
-        if not task:
-            console.print("[red]Error:[/red] Failed to start research")
-            raise typer.Exit(1)
         
         console.print("[green]✓[/green] Research started")
         console.print(f"  Query: {query}")
         console.print(f"  Source: {source}")
         console.print(f"  Mode: {mode}")
         console.print(f"  Notebook ID: {notebook_id}")
-        console.print(f"  Task ID: {task.get('task_id', 'unknown')}")
+        console.print(f"  Task ID: {result['task_id']}")
         
         estimate = "~30 seconds" if mode == "fast" else "~5 minutes"
         console.print(f"\n[dim]Estimated time: {estimate}[/dim]")
         console.print(f"[dim]Run 'nlm research status {notebook_id}' to check progress.[/dim]")
+    except ServiceError as e:
+        console.print(f"[red]Error:[/red] {e.user_message}")
+        raise typer.Exit(1)
     except NLMError as e:
         console.print(f"[red]Error:[/red] {e.message}")
         if e.hint:
@@ -122,7 +103,7 @@ def start_research(
 
 
 @app.command("status")
-def research_status(
+def check_status(
     notebook_id: str = typer.Argument(..., help="Notebook ID"),
     task_id: Optional[str] = typer.Option(None, "--task-id", "-t", help="Specific task ID to check"),
     compact: bool = typer.Option(
@@ -150,6 +131,7 @@ def research_status(
         if task_id:
             task_id = get_alias_manager().resolve(task_id)
 
+        # Polling loop is a CLI-only presentation concern (progress spinners)
         if max_wait > 0:
             with Progress(
                 SpinnerColumn(),
@@ -158,103 +140,91 @@ def research_status(
             ) as progress:
                 progress.add_task("Waiting for research to complete...", total=None)
                 
-                # Simple polling loop
                 import time
                 elapsed = 0
                 with get_client(profile) as client:
                     while elapsed < max_wait:
-                        task = client.poll_research(notebook_id, target_task_id=task_id)
-                        if task and task.get('status') == 'completed':
+                        result = research_service.poll_research(
+                            client, notebook_id,
+                            task_id=task_id,
+                            compact=compact,
+                        )
+                        if result["status"] == "completed":
                             break
                         time.sleep(poll_interval)
                         elapsed += poll_interval
         else:
             with get_client(profile) as client:
-                task = client.poll_research(notebook_id, target_task_id=task_id)
+                result = research_service.poll_research(
+                    client, notebook_id,
+                    task_id=task_id,
+                    compact=compact,
+                )
         
-        # Handle None task (no research found)
-        if task is None:
-            console.print(f"\n[bold]Research Status:[/bold]")
-            console.print(f"  Status: [dim]no research found[/dim]")
-            if task_id:
-                console.print(f"  Task ID: [cyan]{task_id}[/cyan] [dim](not found)[/dim]")
-            console.print(f"\n[dim]Start a research task with 'nlm research start'.[/dim]")
-            raise typer.Exit(0)
-        
-        # Handle dict response from client
-        if isinstance(task, dict):
-            status = task.get('status', 'unknown')
-            sources_found = task.get('sources_found', task.get('source_count', 0))
-            report = task.get('report', '')
-            sources = task.get('sources', [])
-            all_tasks = task.get('tasks', [])
-        else:
-            status = getattr(task, 'status', 'unknown')
-            sources_found = getattr(task, 'sources_found', 0)
-            report = getattr(task, 'report', '')
-            sources = getattr(task, 'sources', [])
-            all_tasks = []
-        
-        status_style = {
-            "completed": "green",
-            "pending": "yellow",
-            "running": "yellow",
-            "in_progress": "yellow",
-            "no_research": "dim",
-            "failed": "red",
-        }.get(status, "")
-        
-        console.print(f"\n[bold]Research Status:[/bold]")
-        
-        # Display all tasks if multiple exist
-        if len(all_tasks) > 1:
-            console.print(f"  Tasks found: {len(all_tasks)}")
-            console.print(f"  Overall status: [{status_style}]{status}[/{status_style}]" if status_style else f"  Overall status: {status}")
-            console.print()
-            for i, t in enumerate(all_tasks):
-                t_status = t.get("status", "unknown")
-                t_style = {"completed": "green", "in_progress": "yellow"}.get(t_status, "")
-                task_id_str = t.get('task_id', 'unknown')
-                console.print(f"  [{i+1}] Task ID: [cyan]{task_id_str}[/cyan]")
-                console.print(f"      Status: [{t_style}]{t_status}[/{t_style}]" if t_style else f"      Status: {t_status}")
-                console.print(f"      Sources: {t.get('source_count', 0)}")
-        else:
-            # Show task ID for single task too
-            task_id_val = task.get('task_id', '')
-            if status_style:
-                console.print(f"  Status: [{status_style}]{status}[/{status_style}]")
-            if task_id_val:
-                console.print(f"  Task ID: [cyan]{task_id_val}[/cyan]")
-            else:
-                console.print(f"  Status: {status}")
-                if task_id_val:
-                    console.print(f"  Task ID: [cyan]{task_id_val}[/cyan]")
-            console.print(f"  Sources found: {sources_found}")
-        
-        if report and not compact:
-            console.print(f"\n[bold]Report:[/bold]")
-            console.print(report)
-        
-        if sources and not compact:
-            console.print(f"\n[bold]Discovered Sources:[/bold]")
-            for i, src in enumerate(sources):
-                if isinstance(src, dict):
-                    title = src.get("title", "Untitled")
-                    url = src.get("url", "")
-                else:
-                    title = getattr(src, 'title', 'Untitled')
-                    url = getattr(src, 'url', '')
-                console.print(f"  [{i}] {title}")
-                if url:
-                    console.print(f"      [dim]{url}[/dim]")
-        
-        if status == "completed":
-            console.print(f"\n[dim]Run 'nlm research import {notebook_id} <task-id>' to import sources.[/dim]")
+        _display_research_status(result, compact)
+
+    except ServiceError as e:
+        console.print(f"[red]Error:[/red] {e.user_message}")
+        raise typer.Exit(1)
     except NLMError as e:
         console.print(f"[red]Error:[/red] {e.message}")
         if e.hint:
             console.print(f"\n[dim]Hint: {e.hint}[/dim]")
         raise typer.Exit(1)
+
+
+def _display_research_status(result: dict, compact: bool) -> None:
+    """Display research status in a formatted way (presentation-only helper)."""
+    status = result["status"]
+    sources = result.get("sources", [])
+    report = result.get("report", "")
+
+    status_style = {
+        "completed": "green",
+        "pending": "yellow",
+        "running": "yellow",
+        "in_progress": "yellow",
+        "no_research": "dim",
+        "failed": "red",
+    }.get(status, "")
+
+    console.print(f"\n[bold]Research Status:[/bold]")
+    
+    if status == "no_research":
+        console.print(f"  Status: [dim]no research found[/dim]")
+        console.print(f"\n[dim]Start a research task with 'nlm research start'.[/dim]")
+        return
+    
+    if status_style:
+        console.print(f"  Status: [{status_style}]{status}[/{status_style}]")
+    else:
+        console.print(f"  Status: {status}")
+
+    task_id_val = result.get("task_id", "")
+    if task_id_val:
+        console.print(f"  Task ID: [cyan]{task_id_val}[/cyan]")
+    console.print(f"  Sources found: {result.get('sources_found', 0)}")
+
+    if report and not compact:
+        console.print(f"\n[bold]Report:[/bold]")
+        console.print(report)
+
+    if sources and not compact:
+        console.print(f"\n[bold]Discovered Sources:[/bold]")
+        for i, src in enumerate(sources):
+            if isinstance(src, dict):
+                title = src.get("title", "Untitled")
+                url = src.get("url", "")
+            else:
+                title = getattr(src, 'title', 'Untitled')
+                url = getattr(src, 'url', '')
+            console.print(f"  [{i}] {title}")
+            if url:
+                console.print(f"      [dim]{url}[/dim]")
+
+    if status == "completed":
+        nb_id = result.get("notebook_id", "")
+        console.print(f"\n[dim]Run 'nlm research import {nb_id} <task-id>' to import sources.[/dim]")
 
 
 @app.command("import")
@@ -281,7 +251,7 @@ def import_research(
         notebook_id = get_alias_manager().resolve(notebook_id)
         
         with get_client(profile) as client:
-            # Auto-detect task ID if not provided
+            # Auto-detect task ID if not provided (CLI-only UX convenience)
             if not task_id:
                 research = client.poll_research(notebook_id)
                 if not research or research.get("status") == "no_research":
@@ -289,7 +259,6 @@ def import_research(
                     console.print("[dim]Start a research task first with 'nlm research start'.[/dim]")
                     raise typer.Exit(1)
                 
-                # Get task ID from first task
                 task_id = research.get("task_id")
                 if not task_id:
                     tasks = research.get("tasks", [])
@@ -304,30 +273,22 @@ def import_research(
             else:
                 task_id = get_alias_manager().resolve(task_id)
             
-            # Get sources from the latest research poll
-            research_result = client.poll_research(notebook_id, target_task_id=task_id)
-            if not research_result or 'sources' not in research_result:
-                console.print("[red]Error:[/red] No research sources found.")
-                raise typer.Exit(1)
-            
-            # Filter sources by indices if provided
-            all_sources = research_result.get('sources', [])
-            if source_indices:
-                sources_to_import = [all_sources[i] for i in source_indices if i < len(all_sources)]
-            else:
-                sources_to_import = all_sources
-            
-            sources = client.import_research_sources(notebook_id, task_id, sources_to_import)
+            result = research_service.import_research(
+                client, notebook_id, task_id,
+                source_indices=source_indices,
+            )
         
-        console.print(f"[green]✓[/green] Imported {len(sources) if sources else 0} source(s)")
-        if sources:
-            for src in sources:
-                if isinstance(src, dict):
-                    console.print(f"  • {src.get('title', 'Unknown')}")
-                else:
-                    console.print(f"  • {getattr(src, 'title', 'Unknown')}")
-    except ValueError as e:
-        console.print(f"[red]Error:[/red] Invalid indices. Use comma-separated numbers like: 0,2,5")
+        console.print(f"[green]✓[/green] {result['message']}")
+        for src in result.get("imported_sources", []):
+            if isinstance(src, dict):
+                console.print(f"  • {src.get('title', 'Unknown')}")
+            else:
+                console.print(f"  • {getattr(src, 'title', 'Unknown')}")
+    except ValueError:
+        console.print("[red]Error:[/red] Invalid indices. Use comma-separated numbers like: 0,2,5")
+        raise typer.Exit(1)
+    except ServiceError as e:
+        console.print(f"[red]Error:[/red] {e.user_message}")
         raise typer.Exit(1)
     except NLMError as e:
         console.print(f"[red]Error:[/red] {e.message}")

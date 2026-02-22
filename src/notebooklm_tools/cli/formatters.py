@@ -337,17 +337,25 @@ class JsonFormatter(Formatter):
         data = []
         for art in artifacts:
             if isinstance(art, dict):
-                item = {'id': art.get('artifact_id', art.get('id', '')), 'type': art.get('type', ''), 'status': art.get('status', '')}
+                item = {
+                    'id': art.get('artifact_id', art.get('id', '')),
+                    'type': art.get('type', ''),
+                    'status': art.get('status', ''),
+                    'custom_instructions': art.get('custom_instructions', None),  # Always include
+                }
                 if full:
                     item['title'] = art.get('title', '')
                     item['url'] = art.get('url', '')
-                    item['custom_instructions'] = art.get('custom_instructions', None)
             else:
-                item = {'id': art.id, 'type': art.type, 'status': art.status}
+                item = {
+                    'id': art.id,
+                    'type': art.type,
+                    'status': art.status,
+                    'custom_instructions': getattr(art, 'custom_instructions', None),  # Always include
+                }
                 if full:
                     item['title'] = getattr(art, 'title', '')
                     item['url'] = getattr(art, 'url', '')
-                    item['custom_instructions'] = getattr(art, 'custom_instructions', None)
             data.append(item)
         print(json.dumps(data, indent=2))
 

@@ -3,6 +3,7 @@
 from typing import Any
 
 from ._utils import get_client, get_query_timeout, logged_tool
+from ...services import chat as chat_service, ServiceError
 
 
 @logged_tool()
@@ -26,24 +27,16 @@ def notebook_query(
     """
     try:
         client = get_client()
-        timeout = timeout or get_query_timeout()
-
-        result = client.query(
-            notebook_id=notebook_id,
-            query_text=query,
+        effective_timeout = timeout or get_query_timeout()
+        result = chat_service.query(
+            client, notebook_id, query,
             source_ids=source_ids,
             conversation_id=conversation_id,
-            timeout=timeout,
+            timeout=effective_timeout,
         )
-
-        if result:
-            return {
-                "status": "success",
-                "answer": result.get("answer", ""),
-                "conversation_id": result.get("conversation_id"),
-                "sources_used": result.get("sources_used", []),
-            }
-        return {"status": "error", "error": "Failed to get response"}
+        return {"status": "success", **result}
+    except ServiceError as e:
+        return {"status": "error", "error": e.user_message}
     except Exception as e:
         return {"status": "error", "error": str(e)}
 
@@ -65,40 +58,14 @@ def chat_configure(
     """
     try:
         client = get_client()
-
-        if goal not in ("default", "learning_guide", "custom"):
-            return {
-                "status": "error",
-                "error": f"Invalid goal '{goal}'. Use: default, learning_guide, custom",
-            }
-
-        if goal == "custom" and not custom_prompt:
-            return {
-                "status": "error",
-                "error": "custom_prompt is required when goal='custom'",
-            }
-
-        if response_length not in ("default", "longer", "shorter"):
-            return {
-                "status": "error",
-                "error": f"Invalid response_length '{response_length}'. Use: default, longer, shorter",
-            }
-
-        result = client.configure_chat(
-            notebook_id=notebook_id,
+        result = chat_service.configure_chat(
+            client, notebook_id,
             goal=goal,
             custom_prompt=custom_prompt,
             response_length=response_length,
         )
-
-        if result:
-            return {
-                "status": "success",
-                "notebook_id": notebook_id,
-                "goal": goal,
-                "response_length": response_length,
-                "message": "Chat settings updated.",
-            }
-        return {"status": "error", "error": "Failed to configure chat"}
+        return {"status": "success", **result}
+    except ServiceError as e:
+        return {"status": "error", "error": e.user_message}
     except Exception as e:
         return {"status": "error", "error": str(e)}

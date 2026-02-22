@@ -104,16 +104,20 @@ uv run pytest tests/test_api_client.py
 ## Project Structure
 
 - `src/notebooklm_tools/`
-    - `cli/`: CLI commands and formatting
-    - `mcp/`: MCP Server implementation
-        - `logs/`: Logging configuration
-        - `tools/`: Modular tool definitions (`files.py` for each domain)
+    - `services/`: **Shared service layer (v0.3.0+)** — Business logic, validation, error handling
+        - `errors.py`: Custom error hierarchy (`ServiceError`, `ValidationError`, etc.)
+        - `chat.py`, `downloads.py`, `exports.py`, `notebooks.py`, `notes.py`: Domain services
+        - `research.py`, `sharing.py`, `sources.py`, `studio.py`: More domain services
+    - `cli/`: CLI commands and formatting (thin wrapper delegating to `services/`)
+    - `mcp/`: MCP Server implementation (thin wrapper delegating to `services/`)
+        - `tools/`: Modular tool definitions (one file per domain)
         - `server.py`: Slim server facade (imports tools from modules)
-    - `core/client.py`: The core logic. Contains the internal API calls.
+    - `core/client.py`: Low-level internal API calls (no business logic).
     - `core/constants.py`: Single source of truth for all API code-name mappings.
     - `core/auth.py`: Handles token validation, storage, and loading.
     - `utils/cdp.py`: Chrome DevTools Protocol for cookie extraction and headless auth.
     - `utils/`: Configuration and browser utilities
+- `tests/services/`: Unit tests for all service modules (372+ tests)
 - `CLAUDE.md`: Contains detailed documentation on the internal RPC IDs and protocol specifics. **Refer to this file for API deep dives.**
 - `pyproject.toml`: Project configuration and dependencies.
 
@@ -121,11 +125,13 @@ uv run pytest tests/test_api_client.py
 
 - **Internal APIs:** This project relies on undocumented APIs. Changes to Google's internal API will break functionality.
 - **RPC Protocol:** The API uses Google's `batchexecute` protocol. Responses often contain "anti-XSSI" prefixes (`)]}'`) that must be stripped.
-- **Tools:** New features should be exposed as MCP tools in `server.py`.
+- **Layering (v0.3.0+):** `cli/` and `mcp/` must NOT import from `core/` — delegate to `services/` instead. Services return TypedDicts and raise `ServiceError`/`ValidationError`.
+- **New features:** Add low-level API in `core/client.py` → business logic in `services/*.py` → thin wrappers in `mcp/tools/*.py` and `cli/commands/*.py` → tests in `tests/services/`.
 - **Constants:** All code-name mappings should be defined in `constants.py` using the `CodeMapper` class.
 
 ## Recent Additions
 
+- **v0.3.0 Service Layer Refactor**: Introduced shared `services/` layer with 10 domain modules, eliminating duplicated logic between CLI and MCP. 372+ unit tests.
 - **Skill Commands**: `nlm skill install/uninstall/list/show` for AI assistant integration
 - **Cursor Support**: Added Cursor AI editor to supported skill targets
 - **Verb-First Commands**: Alternative command style (`nlm install skill`, `nlm list skills`)

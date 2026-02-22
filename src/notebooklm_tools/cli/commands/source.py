@@ -9,6 +9,7 @@ from notebooklm_tools.core.alias import get_alias_manager
 from notebooklm_tools.core.exceptions import NLMError
 from notebooklm_tools.cli.formatters import detect_output_format, get_formatter
 from notebooklm_tools.cli.utils import get_client
+from notebooklm_tools.services import sources as sources_service, ServiceError
 
 console = Console()
 app = typer.Typer(
@@ -34,14 +35,13 @@ def list_sources(
         notebook_id = get_alias_manager().resolve(notebook_id)
         with get_client(profile) as client:
             if drive:
-                # For drive mode, get sources with types and check freshness
                 sources = client.get_notebook_sources_with_types(notebook_id)
                 if not skip_freshness:
                     for src in sources:
                         src['is_fresh'] = client.check_source_freshness(src['id'])
             else:
                 sources = client.get_notebook_sources_with_types(notebook_id)
-        
+
         fmt = detect_output_format(json_output, quiet, url_flag=url)
         formatter = get_formatter(fmt, console)
         formatter.format_sources(sources, full=full or drive, url_only=url)
@@ -74,7 +74,7 @@ def add_source(
     """
     notebook_id = get_alias_manager().resolve(notebook_id)
 
-    # Validate that exactly one source type is provided
+    # Validate that exactly one source type is provided (CLI-specific UX)
     source_count = sum(1 for x in [url, text, drive, youtube, file] if x)
     if source_count == 0:
         console.print("[red]Error:[/red] Please specify a source: --url, --text, --file, --drive, or --youtube")
@@ -83,69 +83,65 @@ def add_source(
         console.print("[red]Error:[/red] Please specify only one source type at a time")
         raise typer.Exit(1)
 
+    # Map CLI flags to service source_type + params
+    if youtube:
+        # YouTube is just a URL source type
+        source_type, source_url = "url", youtube
+    elif url:
+        source_type, source_url = "url", url
+    else:
+        source_type, source_url = None, None
+
     try:
         with get_client(profile) as client:
-            if url:
+            if source_type == "url":
                 if wait:
-                    console.print(f"[blue]Adding {url} and waiting for processing...[/blue]")
-                result = client.add_url_source(notebook_id, url=url, wait=wait)
-                source_desc = url
-            elif youtube:
-                if wait:
-                    console.print(f"[blue]Adding YouTube video and waiting for processing...[/blue]")
-                result = client.add_url_source(notebook_id, url=youtube, wait=wait)
-                source_desc = youtube
+                    console.print(f"[blue]Adding {source_url} and waiting for processing...[/blue]")
+                result = sources_service.add_source(
+                    client, notebook_id, "url",
+                    url=source_url, wait=wait,
+                )
             elif text:
                 if wait:
-                    console.print(f"[blue]Adding text and waiting for processing...[/blue]")
-                result = client.add_text_source(notebook_id, text=text, title=title or "Pasted Text", wait=wait)
-                source_desc = title or "Pasted Text"
+                    console.print("[blue]Adding text and waiting for processing...[/blue]")
+                result = sources_service.add_source(
+                    client, notebook_id, "text",
+                    text=text, title=title or None, wait=wait,
+                )
             elif drive:
-                if not title:
-                    title = f"Drive Document ({drive[:8]}...)"
-                
-                # Map doc_type to mime_type
-                mime_map = {
-                    "doc": "application/vnd.google-apps.document",
-                    "slides": "application/vnd.google-apps.presentation",
-                    "sheets": "application/vnd.google-apps.spreadsheet",
-                    "pdf": "application/pdf"
-                }
-                mime_type = mime_map.get(doc_type, "application/vnd.google-apps.document")
-
                 if wait:
-                    console.print(f"[blue]Adding Drive document and waiting for processing...[/blue]")
-                result = client.add_drive_source(notebook_id, document_id=drive, title=title, mime_type=mime_type, wait=wait)
-                source_desc = title
+                    console.print("[blue]Adding Drive document and waiting for processing...[/blue]")
+                result = sources_service.add_source(
+                    client, notebook_id, "drive",
+                    document_id=drive, title=title or None,
+                    doc_type=doc_type, wait=wait,
+                )
             elif file:
                 from pathlib import Path
                 file_path = Path(file).expanduser().resolve()
                 if not file_path.exists():
                     console.print(f"[red]Error:[/red] File not found: {file}")
                     raise typer.Exit(1)
-
                 console.print(f"[blue]Uploading {file_path.name}{'...' if not wait else ' and waiting for processing...'}[/blue]")
-                result = client.add_file(notebook_id, file_path, wait=wait)
-                source_desc = file_path.name
+                result = sources_service.add_source(
+                    client, notebook_id, "file",
+                    file_path=str(file_path), wait=wait,
+                )
             else:
-                raise typer.Exit(1)  # Should never reach here
+                raise typer.Exit(1)
 
         # Show result
-        if file:
-            console.print(f"[green]✓[/green] Uploaded: {result['title']}")
-            console.print(f"[dim]Source ID: {result['id']}[/dim]")
-        else:
-            if result is not None:
-                ready_msg = " (ready)" if wait else ""
-                console.print(f"[green]✓[/green] Added source: {source_desc}{ready_msg}")
-            else:
-                console.print(f"[yellow]⚠[/yellow] Source may have been added (no confirmation from API)")
+        ready_msg = " (ready)" if wait else ""
+        console.print(f"[green]✓[/green] Added source: {result['title']}{ready_msg}")
+        console.print(f"[dim]Source ID: {result['source_id']}[/dim]")
+    except ServiceError as e:
+        console.print(f"[red]Error:[/red] {e.user_message}")
+        raise typer.Exit(1)
     except NLMError as e:
         console.print(f"[red]Error:[/red] {e.message}")
         if e.hint:
             console.print(f"\n[dim]Hint: {e.hint}[/dim]")
         raise typer.Exit(1)
-
 
 
 @app.command("get")
@@ -159,7 +155,7 @@ def get_source(
         source_id = get_alias_manager().resolve(source_id)
         with get_client(profile) as client:
             source = client.get_source_fulltext(source_id)
-        
+
         fmt = detect_output_format(json_output)
         formatter = get_formatter(fmt, console)
         formatter.format_item(source, title="Source Details")
@@ -181,7 +177,7 @@ def describe_source(
         source_id = get_alias_manager().resolve(source_id)
         with get_client(profile) as client:
             summary = client.get_source_guide(source_id)
-        
+
         fmt = detect_output_format(json_output)
         formatter = get_formatter(fmt, console)
         formatter.format_item(summary, title="Source Summary")
@@ -204,9 +200,8 @@ def get_source_content(
         source_id = get_alias_manager().resolve(source_id)
         with get_client(profile) as client:
             content = client.get_source_fulltext(source_id)
-        
+
         if output:
-            # Write raw content to file
             from pathlib import Path
             Path(output).write_text(content["content"])
             console.print(f"[green]✓[/green] Wrote {content['char_count']:,} characters to {output}")
@@ -229,18 +224,20 @@ def delete_source(
 ) -> None:
     """Delete a source permanently."""
     source_id = get_alias_manager().resolve(source_id)
-    
+
     if not confirm:
         typer.confirm(
             f"Are you sure you want to delete source {source_id}?",
             abort=True,
         )
-    
+
     try:
         with get_client(profile) as client:
-            client.delete_source(source_id)
-        
+            sources_service.delete_source(client, source_id)
         console.print(f"[green]✓[/green] Deleted source: {source_id}")
+    except ServiceError as e:
+        console.print(f"[red]Error:[/red] {e.user_message}")
+        raise typer.Exit(1)
     except NLMError as e:
         console.print(f"[red]Error:[/red] {e.message}")
         if e.hint:
@@ -259,19 +256,19 @@ def list_stale_sources(
         notebook_id = get_alias_manager().resolve(notebook_id)
         with get_client(profile) as client:
             sources = client.get_notebook_sources_with_types(notebook_id)
-        
+
         stale_sources = [s for s in sources if not s.get('is_fresh', True)]
-        
+
         if not stale_sources:
             console.print("[green]✓[/green] All Drive sources are up to date.")
             return
-        
+
         console.print(f"[yellow]⚠[/yellow] {len(stale_sources)} source(s) need syncing:")
-        
+
         fmt = detect_output_format(json_output)
         formatter = get_formatter(fmt, console)
         formatter.format_sources(stale_sources, full=True)
-        
+
         console.print("\n[dim]Run 'nlm source sync <notebook-id>' to sync all stale sources.[/dim]")
     except NLMError as e:
         console.print(f"[red]Error:[/red] {e.message}")
@@ -293,30 +290,32 @@ def sync_sources(
     """Sync Drive sources with latest content."""
     try:
         notebook_id = get_alias_manager().resolve(notebook_id)
-        
+
         with get_client(profile) as client:
             if source_ids:
                 ids_to_sync = [get_alias_manager().resolve(sid.strip()) for sid in source_ids.split(",")]
             else:
-                # Get all stale sources
                 sources = client.get_notebook_sources_with_types(notebook_id)
                 ids_to_sync = [s['id'] for s in sources if not s.get('is_fresh', True)]
-        
+
         if not ids_to_sync:
             console.print("[green]✓[/green] No sources need syncing.")
             return
-        
+
         if not confirm:
             typer.confirm(
                 f"Sync {len(ids_to_sync)} source(s)?",
                 abort=True,
             )
-        
+
         with get_client(profile) as client:
-            for source_id in ids_to_sync:
-                client.sync_drive_source(source_id)
-        
-        console.print(f"[green]✓[/green] Synced {len(ids_to_sync)} source(s)")
+            results = sources_service.sync_drive_sources(client, ids_to_sync)
+
+        synced = sum(1 for r in results if r.get("synced"))
+        console.print(f"[green]✓[/green] Synced {synced} source(s)")
+    except ServiceError as e:
+        console.print(f"[red]Error:[/red] {e.user_message}")
+        raise typer.Exit(1)
     except NLMError as e:
         console.print(f"[red]Error:[/red] {e.message}")
         if e.hint:

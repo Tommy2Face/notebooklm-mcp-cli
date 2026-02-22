@@ -1,8 +1,8 @@
 # NotebookLM MCP - Comprehensive Test Plan
 
-**Purpose:** Verify all **29 consolidated MCP tools** work correctly.
+**Purpose:** Verify all **30 consolidated MCP tools** work correctly.
 
-**Version:** 2.2 (Updated 2026-01-31 - corrected tool count)
+**Version:** 2.3 (Updated 2026-02-21 - added studio_revise)
 
 **Changes from v2.1:**
 - Corrected tool count: 29 tools (notes consolidated + server_info added)
@@ -450,7 +450,7 @@ Create a report for notebook [notebook_id]:
 
 ### Test 5.4 - Create Flashcards
 **Tool:** `studio_create`
-**CLI:** `nlm flashcards create [notebook_id] --difficulty medium --confirm`
+**CLI:** `nlm flashcards create [notebook_id] --difficulty medium --focus "Focus on definitions" --confirm`
 
 **Prompt:**
 ```
@@ -466,7 +466,7 @@ Create flashcards for notebook [notebook_id]:
 
 ### Test 5.5 - Create Quiz
 **Tool:** `studio_create`
-**CLI:** `nlm quiz create [notebook_id] --count 2 --difficulty 2 --confirm`
+**CLI:** `nlm quiz create [notebook_id] --count 2 --difficulty 2 --focus "Focus on integration testing" --confirm`
 
 **Prompt:**
 ```
@@ -575,6 +575,25 @@ Rename artifact [artifact_id] in notebook [notebook_id] to "My Renamed Podcast".
 ```
 
 **Expected:** Artifact renamed successfully.
+
+---
+
+### Test 5.12 - Revise Slide Deck
+**Tool:** `studio_revise`
+**CLI:** `nlm slides revise <artifact_id> --slide '1 Make the title larger' --confirm`
+
+**Prompt:**
+```
+Revise the slide deck artifact [artifact_id] in notebook [notebook_id]:
+- slide_instructions: [{"slide": 1, "instruction": "Make the title larger and bolder"}]
+- confirm: true
+```
+
+**Expected:**
+- New artifact created with status "in_progress"
+- New artifact_id returned (different from original)
+- Original artifact unchanged
+- **Verify:** Run `studio_status` — new deck appears with "(2)" suffix in title.
 
 ---
 
@@ -899,13 +918,13 @@ Get NotebookLM MCP server version and check for updates.
 | **Sources** | `source_add`, `source_list_drive`, `source_sync_drive`, `source_delete`, `source_describe`, `source_get_content` | 6 |
 | **Sharing** | `notebook_share_status`, `notebook_share_public`, `notebook_share_invite` | 3 |
 | **Research** | `research_start`, `research_status`, `research_import` | 3 |
-| **Studio** | `studio_create`, `studio_status`, `studio_delete` | 3 |
+| **Studio** | `studio_create`, `studio_status`, `studio_delete`, `studio_revise` | 4 |
 | **Downloads** | `download_artifact` | 1 |
 | **Exports** | `export_artifact` | 1 |
 | **Chat** | `notebook_query`, `chat_configure` | 2 |
 | **Notes** | `note` (unified: list, create, update, delete) | 1 |
 | **Server** | `server_info` | 1 |
-| **Total** | | **29** |
+| **Total** | | **30** |
 
 ---
 

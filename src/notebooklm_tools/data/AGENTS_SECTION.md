@@ -48,8 +48,8 @@ nlm source add <id> --drive <doc-id>
 **Study Materials:**
 ```bash
 nlm report create <id> --format "Study Guide" --confirm
-nlm quiz create <id> --count 10 --confirm
-nlm flashcards create <id> --confirm
+nlm quiz create <id> --count 10 --focus "Key Concepts" --confirm
+nlm flashcards create <id> --focus "Vocabulary" --confirm
 ```
 
 ### Full Documentation
@@ -60,8 +60,9 @@ For complete command reference, troubleshooting, and workflows, install the full
 # Install via uv
 uv tool install notebooklm-mcp-cli
 
-# Then install skill for your AI tool
-nlm skill install <tool>  # claude-code, opencode, gemini-cli, antigravity, codex
+# Then install/update skill for your AI tool
+nlm skill install <tool>  # Install (claude-code, opencode, gemini-cli, etc)
+nlm skill update <tool>   # Update existing skill
 ```
 
 Or view inline: `nlm --ai`

@@ -9,6 +9,11 @@ from notebooklm_tools.core.alias import get_alias_manager
 from notebooklm_tools.core.exceptions import NLMError
 from notebooklm_tools.cli.formatters import detect_output_format, get_formatter
 from notebooklm_tools.cli.utils import get_client
+from notebooklm_tools.services import (
+    notebooks as notebooks_service,
+    chat as chat_service,
+    ServiceError,
+)
 
 console = Console()
 app = typer.Typer(
@@ -34,6 +39,9 @@ def list_notebooks(
         fmt = detect_output_format(json_output, quiet, title)
         formatter = get_formatter(fmt, console)
         formatter.format_notebooks(notebooks, full=full, title_only=title)
+    except ServiceError as e:
+        console.print(f"[red]Error:[/red] {e.user_message}")
+        raise typer.Exit(1)
     except NLMError as e:
         console.print(f"[red]Error:[/red] {e.message}")
         if e.hint:
@@ -49,14 +57,13 @@ def create_notebook(
     """Create a new notebook."""
     try:
         with get_client(profile) as client:
-            notebook = client.create_notebook(title)
+            result = notebooks_service.create_notebook(client, title)
         
-        if not notebook:
-            console.print("[red]Error:[/red] Failed to create notebook. The API returned an empty or invalid response.")
-            raise typer.Exit(1)
-            
-        console.print(f"[green]✓[/green] Created notebook: {notebook.title}")
-        console.print(f"  ID: {notebook.id}")
+        console.print(f"[green]✓[/green] {result['message']}")
+        console.print(f"  ID: {result['notebook_id']}")
+    except ServiceError as e:
+        console.print(f"[red]Error:[/red] {e.user_message}")
+        raise typer.Exit(1)
     except NLMError as e:
         console.print(f"[red]Error:[/red] {e.message}")
         if e.hint:
@@ -74,11 +81,14 @@ def get_notebook(
     try:
         notebook_id = get_alias_manager().resolve(notebook_id)
         with get_client(profile) as client:
-            notebook = client.get_notebook(notebook_id)
+            result = notebooks_service.get_notebook(client, notebook_id)
         
         fmt = detect_output_format(json_output)
         formatter = get_formatter(fmt, console)
-        formatter.format_item(notebook, title="Notebook Details")
+        formatter.format_item(result, title="Notebook Details")
+    except ServiceError as e:
+        console.print(f"[red]Error:[/red] {e.user_message}")
+        raise typer.Exit(1)
     except NLMError as e:
         console.print(f"[red]Error:[/red] {e.message}")
         if e.hint:
@@ -96,11 +106,14 @@ def describe_notebook(
     try:
         notebook_id = get_alias_manager().resolve(notebook_id)
         with get_client(profile) as client:
-            result = client.get_notebook_summary(notebook_id)
+            result = notebooks_service.describe_notebook(client, notebook_id)
         
         fmt = detect_output_format(json_output)
         formatter = get_formatter(fmt, console)
         formatter.format_item(result, title="Notebook Summary")
+    except ServiceError as e:
+        console.print(f"[red]Error:[/red] {e.user_message}")
+        raise typer.Exit(1)
     except NLMError as e:
         console.print(f"[red]Error:[/red] {e.message}")
         if e.hint:
@@ -118,12 +131,12 @@ def rename_notebook(
     try:
         notebook_id = get_alias_manager().resolve(notebook_id)
         with get_client(profile) as client:
-            success = client.rename_notebook(notebook_id, new_title)
+            result = notebooks_service.rename_notebook(client, notebook_id, new_title)
         
-        if success:
-            console.print(f"[green]✓[/green] Renamed notebook to: {new_title}")
-        else:
-            console.print("[yellow]⚠[/yellow] Rename may have failed")
+        console.print(f"[green]✓[/green] {result['message']}")
+    except ServiceError as e:
+        console.print(f"[red]Error:[/red] {e.user_message}")
+        raise typer.Exit(1)
     except NLMError as e:
         console.print(f"[red]Error:[/red] {e.message}")
         if e.hint:
@@ -148,9 +161,12 @@ def delete_notebook(
     
     try:
         with get_client(profile) as client:
-            client.delete_notebook(notebook_id)
+            result = notebooks_service.delete_notebook(client, notebook_id)
         
-        console.print(f"[green]✓[/green] Deleted notebook: {notebook_id}")
+        console.print(f"[green]✓[/green] {result['message']}")
+    except ServiceError as e:
+        console.print(f"[red]Error:[/red] {e.user_message}")
+        raise typer.Exit(1)
     except NLMError as e:
         console.print(f"[red]Error:[/red] {e.message}")
         if e.hint:
@@ -176,23 +192,21 @@ def query_notebook(
     """Chat with notebook sources."""
     try:
         sources = source_ids.split(",") if source_ids else None
-        
         notebook_id = get_alias_manager().resolve(notebook_id)
         
         with get_client(profile) as client:
-            response = client.query(
-                notebook_id,
-                question,
+            result = chat_service.query(
+                client, notebook_id, question,
                 source_ids=sources,
                 conversation_id=conversation_id,
             )
         
-        if response:
-            fmt = detect_output_format(json_output)
-            formatter = get_formatter(fmt, console)
-            formatter.format_item(response, title="Query Response")
-        else:
-            console.print("[yellow]No response received[/yellow]")
+        fmt = detect_output_format(json_output)
+        formatter = get_formatter(fmt, console)
+        formatter.format_item(result, title="Query Response")
+    except ServiceError as e:
+        console.print(f"[red]Error:[/red] {e.user_message}")
+        raise typer.Exit(1)
     except NLMError as e:
         console.print(f"[red]Error:[/red] {e.message}")
         if e.hint:

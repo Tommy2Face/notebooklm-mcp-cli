@@ -128,6 +128,7 @@ mcp__notebooklm-mcp__save_auth_tokens(cookies="<cookie_header>")
 nlm login                           # Launch Chrome, extract cookies (primary method)
 nlm login --check                   # Validate current session
 nlm login --profile work            # Use named profile for multiple accounts
+nlm login --provider openclaw --cdp-url http://127.0.0.1:18800  # External CDP provider
 nlm login switch <profile>          # Switch the default profile
 nlm login profile list              # List all profiles with email addresses
 nlm login profile delete <name>     # Delete a profile
@@ -254,6 +255,12 @@ Use `studio_create` with `artifact_type` and type-specific options. All require 
 
 **Common options**: `source_ids`, `language` (BCP-47 code), `focus_prompt`
 
+**Revise Slides:** Use `studio_revise` to revise individual slides in an existing slide deck.
+- Requires `artifact_id` (from `studio_status`) and `slide_instructions`
+- Creates a NEW artifact — the original is not modified
+- Slide numbers are 1-based (slide 1 = first slide)
+- Poll `studio_status` after calling to check when the new deck is ready
+
 #### CLI Commands
 
 All generation commands share these flags:
@@ -278,13 +285,17 @@ nlm report create <id> --format "Create Your Own" --prompt "Custom..." --confirm
 # Quiz
 nlm quiz create <id> --confirm
 nlm quiz create <id> --count 5 --difficulty 3 --confirm
+nlm quiz create <id> --count 10 --difficulty 3 --focus "Focus on key concepts" --confirm
 # Count: number of questions (default: 2)
 # Difficulty: 1-5 (1=easy, 5=hard)
+# Focus: optional text to guide quiz generation
 
 # Flashcards
 nlm flashcards create <id> --confirm
 nlm flashcards create <id> --difficulty hard --confirm
+nlm flashcards create <id> --difficulty medium --focus "Focus on definitions" --confirm
 # Difficulty: easy, medium, hard
+# Focus: optional text to guide flashcard generation
 
 # Mind Map
 nlm mindmap create <id> --confirm
@@ -295,6 +306,8 @@ nlm mindmap list <id>  # List existing mind maps
 nlm slides create <id> --confirm
 nlm slides create <id> --format presenter --length short --confirm
 # Formats: detailed, presenter | Lengths: short, default
+nlm slides revise <artifact-id> --slide '1 Make the title larger' --confirm
+# Creates a NEW deck with revisions. Original unchanged.
 
 # Infographic
 nlm infographic create <id> --confirm
@@ -330,6 +343,8 @@ nlm studio status <nb-id> --json                   # JSON output
 nlm download audio <nb-id> --output podcast.mp3
 nlm download video <nb-id> --output video.mp4
 nlm download report <nb-id> --output report.md
+nlm download slide-deck <nb-id> --output slides.pdf           # PDF (default)
+nlm download slide-deck <nb-id> --output slides.pptx --format pptx  # PPTX
 nlm download quiz <nb-id> --output quiz.json --format json
 
 # Export to Google Docs/Sheets
@@ -341,6 +356,8 @@ nlm studio delete <nb-id> <artifact-id> --confirm
 ```
 
 **Status values**: `completed` (✓), `in_progress` (●), `failed` (✗)
+
+**Prompt Extraction**: The `studio_status` tool returns a `custom_instructions` field for each artifact. This contains the original focus prompt or custom instructions used to generate that artifact (e.g., the prompt for a "Create Your Own" report, or the focus topic for an Audio Overview). This is useful for retrieving the exact prompt that generated a successful artifact.
 
 ### Renaming Artifacts
 
@@ -468,6 +485,20 @@ nlm login switch work                        # Switch default profile
 | `auth.browser` | `auto` | Browser for login (auto, chrome, chromium) |
 | `auth.default_profile` | `default` | Profile to use when `--profile` not specified |
 
+### 11. Skill Management
+
+Manage the NotebookLM skill installation for various AI assistants:
+
+```bash
+nlm skill list                              # Show installation status
+nlm skill update                            # Update all outdated skills
+nlm skill update <tool>                     # Update specific skill (e.g., claude-code)
+nlm skill install <tool>                    # Install skill
+nlm skill uninstall <tool>                  # Uninstall skill
+```
+
+**Verb-first aliases**: `nlm update skill`, `nlm list skills`, `nlm install skill`
+
 ## Output Formats
 
 Most list commands support multiple formats:
@@ -508,8 +539,8 @@ nlm source list <id>
 
 ```bash
 nlm report create <id> --format "Study Guide" --confirm
-nlm quiz create <id> --count 10 --difficulty 3 --confirm
-nlm flashcards create <id> --difficulty medium --confirm
+nlm quiz create <id> --count 10 --difficulty 3 --focus "Exam prep" --confirm
+nlm flashcards create <id> --difficulty medium --focus "Core terms" --confirm
 ```
 
 ### Pattern 4: Drive Document Workflow

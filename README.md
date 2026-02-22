@@ -2,6 +2,12 @@
 
 ![NotebookLM MCP Header](docs/media/header.jpg)
 
+[![PyPI version](https://img.shields.io/pypi/v/notebooklm-mcp-cli)](https://pypi.org/project/notebooklm-mcp-cli/)
+[![PyPI downloads](https://img.shields.io/pypi/dm/notebooklm-mcp-cli)](https://pypistats.org/packages/notebooklm-mcp-cli)
+[![Total downloads](https://static.pepy.tech/badge/notebooklm-mcp-cli)](https://pepy.tech/projects/notebooklm-mcp-cli)
+[![Python](https://img.shields.io/pypi/pyversions/notebooklm-mcp-cli)](https://pypi.org/project/notebooklm-mcp-cli/)
+[![License](https://img.shields.io/pypi/l/notebooklm-mcp-cli)](https://github.com/jacob-bd/notebooklm-mcp-cli/blob/main/LICENSE)
+
 > 🎉 **January 2026 — Major Update!** This project has been completely refactored to unify **NotebookLM-MCP** and **NotebookLM-CLI** into a single, powerful package. One install gives you both the CLI (`nlm`) and MCP server (`notebooklm-mcp`). See the [CLI Guide](docs/CLI_GUIDE.md) and [MCP Guide](docs/MCP_GUIDE.md) for full documentation.
 
 **Programmatic access to Google NotebookLM** — via command-line interface (CLI) or Model Context Protocol (MCP) server.
@@ -18,9 +24,9 @@
 
 ### CLI Demos
 
-| **CLI Overview** | **CLI, MCP & Skills Deep Dive** |
-|:---:|:---:|
-| [![CLI Overview](https://img.youtube.com/vi/XyXVuALWZkE/mqdefault.jpg)](https://www.youtube.com/watch?v=XyXVuALWZkE) | [![CLI, MCP & Skills](https://img.youtube.com/vi/ZQBQigFK-E8/mqdefault.jpg)](https://www.youtube.com/watch?v=ZQBQigFK-E8) |
+| **CLI Overview** | **CLI, MCP & Skills Deep Dive** | **Latest: Setup, Doctor & One-Click Install** |
+|:---:|:---:|:---:|
+| [![CLI Overview](https://img.youtube.com/vi/XyXVuALWZkE/mqdefault.jpg)](https://www.youtube.com/watch?v=XyXVuALWZkE) | [![CLI, MCP & Skills](https://img.youtube.com/vi/ZQBQigFK-E8/mqdefault.jpg)](https://www.youtube.com/watch?v=ZQBQigFK-E8) | [![Latest: Setup, Doctor & mcpb](https://img.youtube.com/vi/5tOUilBTJ3Q/mqdefault.jpg)](https://www.youtube.com/watch?v=5tOUilBTJ3Q) |
 
 
 ## Two Ways to Use
@@ -45,9 +51,13 @@ Run `nlm --ai` for comprehensive AI-assistant documentation.
 Connect AI assistants (Claude, Gemini, Cursor, etc.) to NotebookLM:
 
 ```bash
-# Add to Claude Code or Gemini CLI
-claude mcp add --scope user notebooklm-mcp notebooklm-mcp
-gemini mcp add --scope user notebooklm-mcp notebooklm-mcp
+# Automatic setup — picks the right config for each tool
+nlm setup add claude-code
+nlm setup add gemini
+nlm setup add cursor
+nlm setup add cline
+nlm setup add antigravity
+```
 ```
 
 Then use natural language: *"Create a notebook about quantum computing and generate a podcast"*
@@ -61,14 +71,18 @@ Then use natural language: *"Create a notebook about quantum computing and gener
 | Add Sources (URL, Text, Drive, File) | `nlm source add` | `source_add` |
 | Query notebook (AI chat) | `nlm notebook query` | `notebook_query` |
 | Create Studio Content (Audio, Video, etc.) | `nlm studio create` | `studio_create` |
+| Revise slide decks | `nlm slides revise` | `studio_revise` |
 | Download artifacts | `nlm download <type>` | `download_artifact` |
 | Web/Drive research | `nlm research start` | `research_start` |
 | Share notebook | `nlm share public/invite` | `notebook_share_*` |
 | Sync Drive sources | `nlm source sync` | `source_sync_drive` |
+| Configure AI tools | `nlm setup add/remove/list` | — |
+| Install AI Skills | `nlm skill install/update` | — |
+| Diagnose issues | `nlm doctor` | — |
 
 📚 **More Documentation:**
 - **[CLI Guide](docs/CLI_GUIDE.md)** — Complete command reference
-- **[MCP Guide](docs/MCP_GUIDE.md)** — All 29 MCP tools with examples
+- **[MCP Guide](docs/MCP_GUIDE.md)** — All 30 MCP tools with examples
 - **[Authentication](docs/AUTHENTICATION.md)** — Setup and troubleshooting
 - **[API Reference](docs/API_REFERENCE.md)** — Internal API docs for contributors
 
@@ -222,12 +236,11 @@ rm -rf ~/.notebooklm-mcp-cli
 
 Also remove from your AI tools:
 
-| Tool | Command |
-|------|---------|
-| Claude Code | `claude mcp remove notebooklm-mcp` |
-| Gemini CLI | `gemini mcp remove notebooklm-mcp` |
-| Claude Desktop | Settings → Extensions → Remove |
-| Cursor/VS Code | Remove entry from `~/.cursor/mcp.json` or `~/.vscode/mcp.json` |
+```bash
+nlm setup remove claude-code
+nlm setup remove cursor
+# ... or any configured tool
+```
 
 ## Authentication
 
@@ -248,6 +261,9 @@ nlm login --profile personal
 
 # Manual mode: import cookies from a file
 nlm login --manual --file cookies.txt
+
+# External CDP provider (e.g., OpenClaw-managed browser)
+nlm login --provider openclaw --cdp-url http://127.0.0.1:18800
 ```
 
 **Profile management:**
@@ -278,15 +294,78 @@ For detailed instructions and troubleshooting, see **[docs/AUTHENTICATION.md](do
 
 > **⚠️ Context Window Warning:** This MCP provides **29 tools**. Disable it when not using NotebookLM to preserve context. In Claude Code: `@notebooklm-mcp` to toggle.
 
-### Quick Setup
+### Automatic Setup (Recommended)
 
-**Claude Code / Gemini CLI:**
+Use `nlm setup` to automatically configure the MCP server for your AI tools — no manual JSON editing required:
+
+```bash
+# Add to any supported tool
+nlm setup add claude-code
+nlm setup add claude-desktop
+nlm setup add gemini
+nlm setup add cursor
+nlm setup add windsurf
+
+# Check which tools are configured
+nlm setup list
+
+# Diagnose installation & auth issues
+nlm doctor
+```
+
+### Install AI Skills (Optional)
+
+Install the NotebookLM expert guide for your AI assistant to help it use the tools effectively. Supported for **Cline**, **Antigravity**, **OpenClaw**, **Codex**, **OpenCode**, **Claude Code**, and **Gemini CLI**.
+
+```bash
+# Install skill files
+nlm skill install cline
+nlm skill install openclaw
+nlm skill install codex
+nlm skill install antigravity
+
+# Update skills
+nlm skill update
+```
+
+### Remove from a tool
+
+```bash
+nlm setup remove claude-code
+```
+
+### Using uvx (No Install Required)
+
+If you don't want to install the package, you can use `uvx` to run on-the-fly:
+
+```bash
+# Run CLI commands directly
+uvx --from notebooklm-mcp-cli nlm setup add cursor
+uvx --from notebooklm-mcp-cli nlm login
+```
+
+For tools that use JSON config, point them to uvx:
+```json
+{
+  "mcpServers": {
+    "notebooklm-mcp": {
+      "command": "uvx",
+      "args": ["--from", "notebooklm-mcp-cli", "notebooklm-mcp"]
+    }
+  }
+}
+```
+
+<details>
+<summary>Manual Setup (if you prefer)</summary>
+
+**Claude Code / Gemini CLI** support adding MCP servers via their own CLI:
 ```bash
 claude mcp add --scope user notebooklm-mcp notebooklm-mcp
 gemini mcp add --scope user notebooklm-mcp notebooklm-mcp
 ```
 
-**Cursor / VS Code / Claude Desktop** — Add to your config file:
+**Cursor / Windsurf** resolve commands from your `PATH`, so the command name is enough:
 ```json
 {
   "mcpServers": {
@@ -300,20 +379,27 @@ gemini mcp add --scope user notebooklm-mcp notebooklm-mcp
 | Tool | Config Location |
 |------|-----------------|
 | Cursor | `~/.cursor/mcp.json` |
-| VS Code | `~/.vscode/mcp.json` |
-| Claude Desktop | `~/Library/Application Support/Claude/claude_desktop_config.json` |
+| Windsurf | `~/.codeium/windsurf/mcp_config.json` |
 
-**Run without installing (uvx):**
+**Claude Desktop / VS Code** may not resolve `PATH` — use the full path to the binary:
 ```json
 {
   "mcpServers": {
     "notebooklm-mcp": {
-      "command": "uvx",
-      "args": ["--from", "notebooklm-mcp-cli", "notebooklm-mcp"]
+      "command": "/full/path/to/notebooklm-mcp"
     }
   }
 }
 ```
+
+Find your path with: `which notebooklm-mcp`
+
+| Tool | Config Location |
+|------|-----------------|
+| Claude Desktop | `~/Library/Application Support/Claude/claude_desktop_config.json` |
+| VS Code | `~/.vscode/mcp.json` |
+
+</details>
 
 📚 **Full configuration details:** [MCP Guide](docs/MCP_GUIDE.md) — Server options, environment variables, HTTP transport, multi-user setup, and context window management.
 
@@ -440,8 +526,12 @@ Special thanks to:
 - **saitrogen** ([@saitrogen](https://github.com/saitrogen)) for the research polling query fallback fix.
 - **VooDisss** ([@VooDisss](https://github.com/VooDisss)) for multi-browser authentication improvements.
 - **codepiano** ([@codepiano](https://github.com/codepiano)) for the configurable DevTools timeout for the auth CLI.
-- **Tony Hansmann** ([@997unix](https://github.com/997unix)) for contributing the `nlm setup` and `nlm doctor` commands.
+- **Tony Hansmann** ([@997unix](https://github.com/997unix)) for contributing the `nlm setup` and `nlm doctor` commands and CLI Guide documentation.
 
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=jacob-bd/notebooklm-mcp-cli&type=Date)](https://star-history.com/#jacob-bd/notebooklm-mcp-cli&Date)
 
 ## License
 

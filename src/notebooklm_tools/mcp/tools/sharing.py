@@ -3,6 +3,7 @@
 from typing import Any
 
 from ._utils import get_client, logged_tool
+from ...services import sharing as sharing_service, ServiceError
 
 
 @logged_tool()
@@ -16,24 +17,10 @@ def notebook_share_status(notebook_id: str) -> dict[str, Any]:
     """
     try:
         client = get_client()
-        status = client.get_share_status(notebook_id)
-
-        return {
-            "status": "success",
-            "notebook_id": notebook_id,
-            "is_public": status.is_public,
-            "access_level": status.access_level,
-            "public_link": status.public_link,
-            "collaborators": [
-                {
-                    "email": c.email,
-                    "role": c.role,
-                    "display_name": c.display_name,
-                }
-                for c in status.collaborators
-            ],
-            "collaborator_count": len(status.collaborators),
-        }
+        result = sharing_service.get_share_status(client, notebook_id)
+        return {"status": "success", **result}
+    except ServiceError as e:
+        return {"status": "error", "error": e.user_message}
     except Exception as e:
         return {"status": "error", "error": str(e)}
 
@@ -53,23 +40,10 @@ def notebook_share_public(
     """
     try:
         client = get_client()
-        result = client.set_public_access(notebook_id, is_public)
-
-        if is_public:
-            return {
-                "status": "success",
-                "notebook_id": notebook_id,
-                "is_public": True,
-                "public_link": result,
-                "message": "Public link access enabled.",
-            }
-        else:
-            return {
-                "status": "success",
-                "notebook_id": notebook_id,
-                "is_public": False,
-                "message": "Public link access disabled.",
-            }
+        result = sharing_service.set_public_access(client, notebook_id, is_public)
+        return {"status": "success", **result}
+    except ServiceError as e:
+        return {"status": "error", "error": e.user_message}
     except Exception as e:
         return {"status": "error", "error": str(e)}
 
@@ -91,16 +65,9 @@ def notebook_share_invite(
     """
     try:
         client = get_client()
-        result = client.add_collaborator(notebook_id, email, role)
-
-        if result:
-            return {
-                "status": "success",
-                "notebook_id": notebook_id,
-                "email": email,
-                "role": role,
-                "message": f"Invited {email} as {role}.",
-            }
-        return {"status": "error", "error": "Failed to invite collaborator"}
+        result = sharing_service.invite_collaborator(client, notebook_id, email, role)
+        return {"status": "success", **result}
+    except ServiceError as e:
+        return {"status": "error", "error": e.user_message}
     except Exception as e:
         return {"status": "error", "error": str(e)}

@@ -3,6 +3,7 @@
 from typing import Any
 
 from ._utils import get_client, logged_tool
+from ...services import sources as sources_service, ServiceError
 
 
 @logged_tool()
@@ -43,89 +44,19 @@ def source_add(
         source_add(notebook_id="abc", source_type="url", url="https://example.com", wait=True)
         source_add(notebook_id="abc", source_type="file", file_path="/path/to/doc.pdf", wait=True)
     """
-    valid_types = ["url", "text", "drive", "file"]
-    if source_type not in valid_types:
-        return {
-            "status": "error",
-            "error": f"Unknown source_type '{source_type}'. Valid types: {', '.join(valid_types)}",
-        }
-
     try:
         client = get_client()
-
-        if source_type == "url":
-            if not url:
-                return {"status": "error", "error": "url is required for source_type='url'"}
-            result = client.add_url_source(notebook_id, url, wait=wait, wait_timeout=wait_timeout)
-            if result and result.get("id"):
-                return {
-                    "status": "success",
-                    "source_type": "url",
-                    "source_id": result["id"],
-                    "title": result.get("title", url),
-                    "url": url,
-                    "ready": wait,  # If wait=True, source is ready
-                }
-
-        elif source_type == "text":
-            if not text:
-                return {"status": "error", "error": "text is required for source_type='text'"}
-            result = client.add_text_source(notebook_id, text, title or "Pasted Text", wait=wait, wait_timeout=wait_timeout)
-            if result and result.get("id"):
-                return {
-                    "status": "success",
-                    "source_type": "text",
-                    "source_id": result["id"],
-                    "title": result.get("title", title or "Pasted Text"),
-                    "ready": wait,
-                }
-
-        elif source_type == "drive":
-            if not document_id:
-                return {"status": "error", "error": "document_id is required for source_type='drive'"}
-            
-            # Convert doc_type shorthand to MIME type
-            mime_types = {
-                "doc": "application/vnd.google-apps.document",
-                "slides": "application/vnd.google-apps.presentation",
-                "sheets": "application/vnd.google-apps.spreadsheet",
-                "pdf": "application/pdf",
-            }
-            mime_type = mime_types.get(doc_type, "application/vnd.google-apps.document")
-            
-            result = client.add_drive_source(
-                notebook_id, document_id, title or "Drive Document", mime_type,
-                wait=wait, wait_timeout=wait_timeout
-            )
-            if result and result.get("id"):
-                return {
-                    "status": "success",
-                    "source_type": "drive",
-                    "source_id": result["id"],
-                    "title": result.get("title", title),
-                    "doc_type": doc_type,
-                    "ready": wait,
-                }
-
-        elif source_type == "file":
-            if not file_path:
-                return {"status": "error", "error": "file_path is required for source_type='file'"}
-            result = client.add_file(notebook_id, file_path, wait=wait, wait_timeout=wait_timeout)
-            if result and result.get("id"):
-                return {
-                    "status": "success",
-                    "source_type": "file",
-                    "source_id": result["id"],
-                    "title": result.get("title", file_path.split("/")[-1]),
-                    "file_path": file_path,
-                    "method": "resumable",
-                    "ready": wait,
-                }
-
-        return {"status": "error", "error": f"Failed to add {source_type} source"}
+        result = sources_service.add_source(
+            client, notebook_id, source_type,
+            url=url, text=text, title=title,
+            file_path=file_path, document_id=document_id,
+            doc_type=doc_type, wait=wait, wait_timeout=wait_timeout,
+        )
+        return {"status": "success", "ready": wait, **result}
+    except ServiceError as e:
+        return {"status": "error", "error": e.user_message}
     except Exception as e:
         return {"status": "error", "error": str(e)}
-
 
 
 @logged_tool()
@@ -139,37 +70,10 @@ def source_list_drive(notebook_id: str) -> dict[str, Any]:
     """
     try:
         client = get_client()
-        sources = client.get_notebook_sources_with_types(notebook_id)
-
-        # Check freshness for Drive sources
-        drive_sources = []
-        other_sources = []
-
-        for source in sources:
-            source_info = {
-                "id": source.get("id"),
-                "title": source.get("title"),
-                "type": source.get("source_type_name"),  # Use correct key from client
-            }
-
-            # Use can_sync flag from client to identify Drive sources
-            if source.get("can_sync"):
-                # Check if stale - client returns bool (True=fresh, False=stale)
-                is_fresh = client.check_source_freshness(source["id"])
-                source_info["stale"] = not is_fresh if is_fresh is not None else None
-                source_info["drive_doc_id"] = source.get("drive_doc_id")
-                drive_sources.append(source_info)
-            else:
-                other_sources.append(source_info)
-
-        return {
-            "status": "success",
-            "notebook_id": notebook_id,
-            "drive_sources": drive_sources,
-            "other_sources": other_sources,
-            "drive_count": len(drive_sources),
-            "stale_count": sum(1 for s in drive_sources if s.get("stale")),
-        }
+        result = sources_service.list_drive_sources(client, notebook_id)
+        return {"status": "success", "notebook_id": notebook_id, **result}
+    except ServiceError as e:
+        return {"status": "error", "error": e.user_message}
     except Exception as e:
         return {"status": "error", "error": str(e)}
 
@@ -193,15 +97,7 @@ def source_sync_drive(source_ids: list[str], confirm: bool = False) -> dict[str,
 
     try:
         client = get_client()
-        results = []
-
-        for source_id in source_ids:
-            try:
-                result = client.sync_drive_source(source_id)
-                results.append({"source_id": source_id, "synced": bool(result)})
-            except Exception as e:
-                results.append({"source_id": source_id, "synced": False, "error": str(e)})
-
+        results = sources_service.sync_drive_sources(client, source_ids)
         synced_count = sum(1 for r in results if r.get("synced"))
         return {
             "status": "success",
@@ -209,6 +105,8 @@ def source_sync_drive(source_ids: list[str], confirm: bool = False) -> dict[str,
             "total_count": len(source_ids),
             "results": results,
         }
+    except ServiceError as e:
+        return {"status": "error", "error": e.user_message}
     except Exception as e:
         return {"status": "error", "error": str(e)}
 
@@ -230,14 +128,13 @@ def source_delete(source_id: str, confirm: bool = False) -> dict[str, Any]:
 
     try:
         client = get_client()
-        result = client.delete_source(source_id)
-
-        if result:
-            return {
-                "status": "success",
-                "message": f"Source {source_id} has been permanently deleted.",
-            }
-        return {"status": "error", "error": "Failed to delete source"}
+        sources_service.delete_source(client, source_id)
+        return {
+            "status": "success",
+            "message": f"Source {source_id} has been permanently deleted.",
+        }
+    except ServiceError as e:
+        return {"status": "error", "error": e.user_message}
     except Exception as e:
         return {"status": "error", "error": str(e)}
 
@@ -253,15 +150,10 @@ def source_describe(source_id: str) -> dict[str, Any]:
     """
     try:
         client = get_client()
-        result = client.get_source_guide(source_id)
-
-        if result:
-            return {
-                "status": "success",
-                "summary": result.get("summary", ""),
-                "keywords": result.get("keywords", []),
-            }
-        return {"status": "error", "error": "Failed to get source summary"}
+        result = sources_service.describe_source(client, source_id)
+        return {"status": "success", **result}
+    except ServiceError as e:
+        return {"status": "error", "error": e.user_message}
     except Exception as e:
         return {"status": "error", "error": str(e)}
 
@@ -280,17 +172,9 @@ def source_get_content(source_id: str) -> dict[str, Any]:
     """
     try:
         client = get_client()
-        result = client.get_source_fulltext(source_id)
-
-        if result:
-            content = result.get("content", "")
-            return {
-                "status": "success",
-                "content": content,
-                "title": result.get("title", ""),
-                "source_type": result.get("type", "unknown"),
-                "char_count": len(content),
-            }
-        return {"status": "error", "error": "Failed to get source content"}
+        result = sources_service.get_source_content(client, source_id)
+        return {"status": "success", **result}
+    except ServiceError as e:
+        return {"status": "error", "error": e.user_message}
     except Exception as e:
         return {"status": "error", "error": str(e)}

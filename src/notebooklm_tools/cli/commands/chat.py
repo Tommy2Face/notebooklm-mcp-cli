@@ -8,6 +8,7 @@ from rich.console import Console
 from notebooklm_tools.core.alias import get_alias_manager
 from notebooklm_tools.core.exceptions import NLMError
 from notebooklm_tools.cli.utils import get_client
+from notebooklm_tools.services import chat as chat_service, ServiceError
 
 console = Console()
 app = typer.Typer(
@@ -42,46 +43,26 @@ def configure_chat(
     - learning_guide: Educational, step-by-step explanations
     - custom: Use your own prompt to guide the AI
     """
-    notebook_id = get_alias_manager().resolve(notebook_id)
-
-    # Validate goal
-    valid_goals = ["default", "learning_guide", "custom"]
-    if goal not in valid_goals:
-        console.print(f"[red]Error:[/red] Invalid goal. Must be one of: {', '.join(valid_goals)}")
-        raise typer.Exit(1)
-    
-    # Validate custom prompt requirement
-    if goal == "custom" and not prompt:
-        console.print("[red]Error:[/red] --prompt is required when goal is 'custom'")
-        raise typer.Exit(1)
-    
-    # Validate prompt length
-    if prompt and len(prompt) > 10000:
-        console.print("[red]Error:[/red] Custom prompt must be 10000 characters or less")
-        raise typer.Exit(1)
-    
-    # Validate response length
-    valid_lengths = ["default", "longer", "shorter"]
-    if response_length not in valid_lengths:
-        console.print(f"[red]Error:[/red] Invalid response length. Must be one of: {', '.join(valid_lengths)}")
-        raise typer.Exit(1)
-    
     try:
+        notebook_id = get_alias_manager().resolve(notebook_id)
         with get_client(profile) as client:
-            config = client.configure_chat(
-                notebook_id,
+            result = chat_service.configure_chat(
+                client, notebook_id,
                 goal=goal,
                 custom_prompt=prompt,
                 response_length=response_length,
             )
         
         console.print("[green]✓[/green] Chat configuration updated")
-        console.print(f"  Goal: {config.get('goal', goal)}")
-        if config.get('custom_prompt'):
-            cp = config['custom_prompt']
-            preview = cp[:50] + "..." if len(cp) > 50 else cp
+        console.print(f"  Goal: {result['goal']}")
+        if prompt:
+            preview = prompt[:50] + "..." if len(prompt) > 50 else prompt
             console.print(f"  Prompt: {preview}")
-        console.print(f"  Response length: {config.get('response_length', response_length)}")
+        console.print(f"  Response length: {result['response_length']}")
+
+    except ServiceError as e:
+        console.print(f"[red]Error:[/red] {e.user_message}")
+        raise typer.Exit(1)
     except NLMError as e:
         console.print(f"[red]Error:[/red] {e.message}")
         if e.hint:
@@ -102,4 +83,3 @@ def start_chat(
     """
     from notebooklm_tools.cli.commands.repl import run_chat_repl
     run_chat_repl(notebook_id, profile)
-

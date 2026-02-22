@@ -160,6 +160,19 @@ def _windsurf_config_path() -> Path:
         return Path.home() / ".config" / "codeium" / "windsurf" / "mcp_config.json"
 
 
+def _cline_config_path() -> Path:
+    """Get Cline CLI MCP settings path.
+
+    This is the standalone CLI path, NOT the VS Code extension path.
+    """
+    return Path.home() / ".cline" / "data" / "settings" / "cline_mcp_settings.json"
+
+
+def _antigravity_config_path() -> Path:
+    """Get Google Antigravity MCP config path."""
+    return Path.home() / ".gemini" / "antigravity" / "mcp_config.json"
+
+
 # =============================================================================
 # Client definitions
 # =============================================================================
@@ -188,6 +201,16 @@ CLIENT_REGISTRY = {
     "windsurf": {
         "name": "Windsurf",
         "description": "Codeium Windsurf editor",
+        "has_auto_setup": True,
+    },
+    "cline": {
+        "name": "Cline CLI",
+        "description": "Cline CLI terminal agent",
+        "has_auto_setup": True,
+    },
+    "antigravity": {
+        "name": "Antigravity",
+        "description": "Google Antigravity AI IDE",
         "has_auto_setup": True,
     },
     "codex": {
@@ -303,6 +326,38 @@ def _setup_windsurf() -> bool:
     return True
 
 
+def _setup_cline() -> bool:
+    """Add MCP to Cline CLI config."""
+    config_path = _cline_config_path()
+    config = _read_json_config(config_path)
+
+    if _is_configured(config):
+        console.print(f"[green]✓[/green] Already configured in Cline CLI")
+        return True
+
+    _add_mcp_server(config)
+    _write_json_config(config_path, config)
+    console.print(f"[green]✓[/green] Added to Cline CLI")
+    console.print(f"  [dim]{config_path}[/dim]")
+    return True
+
+
+def _setup_antigravity() -> bool:
+    """Add MCP to Google Antigravity config."""
+    config_path = _antigravity_config_path()
+    config = _read_json_config(config_path)
+
+    if _is_configured(config, "notebooklm"):
+        console.print(f"[green]✓[/green] Already configured in Antigravity")
+        return True
+
+    _add_mcp_server(config, key="notebooklm")
+    _write_json_config(config_path, config)
+    console.print(f"[green]✓[/green] Added to Antigravity")
+    console.print(f"  [dim]{config_path}[/dim]")
+    return True
+
+
 # =============================================================================
 # Commands
 # =============================================================================
@@ -327,6 +382,8 @@ def setup_add(
         nlm setup add gemini
         nlm setup add cursor
         nlm setup add windsurf
+        nlm setup add cline
+        nlm setup add antigravity
     """
     if client not in CLIENT_REGISTRY:
         valid = ", ".join(CLIENT_REGISTRY.keys())
@@ -348,6 +405,8 @@ def setup_add(
         "gemini": _setup_gemini,
         "cursor": _setup_cursor,
         "windsurf": _setup_windsurf,
+        "cline": _setup_cline,
+        "antigravity": _setup_antigravity,
     }
 
     success = setup_fn[client]()
@@ -398,6 +457,8 @@ def setup_remove(
         "gemini": _gemini_config_path(),
         "cursor": _cursor_config_path(),
         "windsurf": _windsurf_config_path(),
+        "cline": _cline_config_path(),
+        "antigravity": _antigravity_config_path(),
     }
 
     config_path = config_paths.get(client)
@@ -490,6 +551,20 @@ def setup_list() -> None:
             path = _windsurf_config_path()
             config = _read_json_config(path)
             if _is_configured(config):
+                status = "[green]✓[/green]"
+            config_path = str(path).replace(str(Path.home()), "~")
+
+        elif client_id == "cline":
+            path = _cline_config_path()
+            config = _read_json_config(path)
+            if _is_configured(config):
+                status = "[green]✓[/green]"
+            config_path = str(path).replace(str(Path.home()), "~")
+
+        elif client_id == "antigravity":
+            path = _antigravity_config_path()
+            config = _read_json_config(path)
+            if _is_configured(config, "notebooklm"):
                 status = "[green]✓[/green]"
             config_path = str(path).replace(str(Path.home()), "~")
 
