@@ -35,6 +35,15 @@ uv run pytest tests/test_file.py::test_function -v
 
 **Python requirement:** >=3.11
 
+## Docker
+
+```bash
+docker build --target production -t notebooklm-mcp .   # Build production image
+docker build --target development -t notebooklm-mcp:dev .  # Build dev image
+```
+
+Multi-stage Dockerfile (Python 3.12-slim): builder (uv) → development → production. Builder uses `uv sync --frozen` to install all dependencies. Production stage copies `.venv`, `src/`, and `pyproject.toml`. Non-root user (`appuser`, UID 1001). Exposes port 8080. Also available via top-level `docker-compose.yml` as `notebooklm-mcp` service (host port 8082), which runs in HTTP transport mode.
+
 ## Authentication (SIMPLIFIED!)
 
 **You only need to provide COOKIES!** The CSRF token and session ID are now **automatically extracted** when needed.
