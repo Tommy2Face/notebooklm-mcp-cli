@@ -82,12 +82,15 @@ save_auth_tokens(cookies=<cookie_header>)
 | `NOTEBOOKLM_COOKIES` | Yes | Full cookie header from Chrome DevTools |
 | `NOTEBOOKLM_CSRF_TOKEN` | No | (DEPRECATED - auto-extracted) |
 | `NOTEBOOKLM_SESSION_ID` | No | (DEPRECATED - auto-extracted) |
+| `NOTEBOOKLM_BL` | No | Override for build label / bl URL param (auto-extracted from page) |
+| `NOTEBOOKLM_HL` | No | Interface language and default artifact language (default: `en`) |
 
 ### Token Expiration
 
 - **Cookies**: Stable for weeks, but some rotate on each request
 - **CSRF token**: Auto-refreshed on each client initialization
 - **Session ID**: Auto-refreshed on each client initialization
+- **Build label (bl)**: Auto-extracted during login and CSRF refresh; stays current with Google's build
 
 When API calls fail with auth errors, re-extract fresh cookies from Chrome DevTools.
 
@@ -156,6 +159,7 @@ src/notebooklm_tools/
 | `notebook_query` | Ask questions (AI answers!) |
 | `source_list_drive` | List sources with types, check Drive freshness |
 | `source_sync_drive` | Sync stale Drive sources (REQUIRES confirmation) |
+| `source_rename` | Rename a source in a notebook |
 | `source_delete` | Delete a source from notebook (REQUIRES confirmation) |
 | `research_start` | Start Web or Drive research to discover sources |
 | `research_status` | Check research progress and get results |

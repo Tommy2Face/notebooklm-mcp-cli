@@ -310,6 +310,20 @@ nlm source sync <notebook-id> [OPTIONS]
 | `--source-ids` | Specific source IDs to sync (comma-separated) |
 | `--profile` | Use specific profile |
 
+### nlm source rename
+
+Rename a source.
+
+```bash
+nlm source rename <source-id> <new-title> [OPTIONS]
+nlm rename source <source-id> <new-title> [OPTIONS]  # verb-first alias
+```
+
+| Option | Description |
+|--------|-------------|
+| `--notebook` | **Required** - Notebook ID containing the source |
+| `--profile` | Use specific profile |
+
 ### nlm source delete
 
 Delete a source permanently.
@@ -819,7 +833,7 @@ nlm config set <key> <value>
 | `output.color` | `true` | Enable colored output |
 | `output.short_ids` | `true` | Show shortened IDs |
 | `auth.browser` | `auto` | Browser for login (auto, chrome, chromium) |
-| `auth.default_profile` | `default` | Profile to use when `--profile` not specified |
+| `auth.default_profile` | `default` | Profile to use when `--profile` not specified. **Note:** The MCP Server always uses the active default profile. Changing this setting will instantaneously switch the MCP server's Google account. |
 
 **Example**: Set default profile to avoid typing `--profile` for every command:
 

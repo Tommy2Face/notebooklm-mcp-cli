@@ -28,6 +28,7 @@ from notebooklm_tools.cli.commands.source import (
     get_source,
     describe_source,
     get_source_content,
+    rename_source,
     delete_source,
     list_stale_sources,
     sync_sources,
@@ -114,7 +115,7 @@ def create_audio_verb(
         notebook_id=notebook,
         format=format_opt or "deep_dive",
         length=length or "default",
-        language=language or "en",
+        language=language or "",
         focus=focus,
         source_ids=source_ids,
         confirm=confirm,
@@ -138,7 +139,7 @@ def create_video_verb(
         notebook_id=notebook,
         format=format_opt or "explainer",
         style=style or "auto_select",
-        language=language or "en",
+        language=language or "",
         focus=focus or "",
         source_ids=source_ids,
         confirm=confirm,
@@ -161,7 +162,7 @@ def create_report_verb(
         notebook_id=notebook,
         format=format_opt or "Briefing Doc",
         prompt=prompt or "",
-        language=language or "en",
+        language=language or "",
         source_ids=source_ids,
         confirm=confirm,
         profile=profile
@@ -184,7 +185,7 @@ def create_infographic_verb(
         notebook_id=notebook,
         orientation=orientation or "landscape",
         detail=detail or "standard",
-        language=language or "en",
+        language=language or "",
         focus=focus or "",
         source_ids=source_ids,
         confirm=confirm,
@@ -208,7 +209,7 @@ def create_slides_verb(
         notebook_id=notebook,
         format=format_opt or "detailed",
         length=length or "default",
-        language=language or "en",
+        language=language or "",
         focus=focus or "",
         source_ids=source_ids,
         confirm=confirm,
@@ -267,7 +268,7 @@ def create_data_table_verb(
     create_data_table(
         notebook_id=notebook,
         description=description,
-        language=language or "en",
+        language=language or "",
         source_ids=source_ids,
         confirm=confirm,
         profile=profile
@@ -508,6 +509,17 @@ def rename_notebook_verb(
     rename_notebook(notebook_id=notebook, new_title=title, profile=profile)
 
 
+@rename_app.command("source")
+def rename_source_verb(
+    source_id: str = typer.Argument(..., help="Source ID"),
+    title: str = typer.Argument(..., help="New title"),
+    notebook_id: str = typer.Option(..., "--notebook", "-n", help="Notebook ID containing the source"),
+    profile: Optional[str] = typer.Option(None, "--profile", "-p", help="Profile to use"),
+) -> None:
+    """Rename a source."""
+    rename_source(source_id=source_id, title=title, notebook_id=notebook_id, profile=profile)
+
+
 @rename_app.command("studio")
 def rename_studio_verb(
     artifact: str = typer.Argument(..., help="Artifact ID to rename"),
@@ -595,6 +607,7 @@ def query_notebook_verb(
     conversation_id: Optional[str] = typer.Option(None, "--conversation-id", "-c", help="Conversation ID for follow-up questions"),
     source_ids: Optional[str] = typer.Option(None, "--source-ids", "-s", help="Comma-separated source IDs to query (default: all)"),
     profile: Optional[str] = typer.Option(None, "--profile", "-p", help="Profile to use"),
+    timeout: Optional[float] = typer.Option(None, "--timeout", "-t", help="Query timeout in seconds (default: 120)"),
 ) -> None:
     """Chat with notebook sources."""
     query_notebook(
@@ -602,7 +615,8 @@ def query_notebook_verb(
         question=question,
         conversation_id=conversation_id,
         source_ids=source_ids,
-        profile=profile
+        profile=profile,
+        timeout=timeout,
     )
 
 

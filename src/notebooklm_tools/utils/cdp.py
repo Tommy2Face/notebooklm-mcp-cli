@@ -425,6 +425,17 @@ def is_logged_in(url: str) -> bool:
     return False
 
 
+def extract_build_label(html: str) -> str:
+    """Extract the build label (bl) from page HTML.
+
+    Google embeds the current build label under the 'cfb2h' key in the page's
+    inline configuration JSON. This value is used as the 'bl' URL parameter
+    in batchexecute and query requests.
+    """
+    match = re.search(r'"cfb2h":"([^"]+)"', html)
+    return match.group(1) if match else ""
+
+
 def extract_csrf_token(html: str) -> str:
     """Extract CSRF token from page HTML."""
     match = re.search(r'"SNlM0e":"([^"]+)"', html)
@@ -448,9 +459,9 @@ def extract_email(html: str) -> str:
     """Extract user email from page HTML."""
     # Try various patterns Google uses to embed the email
     patterns = [
-        r'"([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})"',  # Generic email in quotes
-        r'data-email="([^"]+)"',  # data-email attribute
         r'"oPEP7c":"([^"]+@[^"]+)"',  # Google's internal email field
+        r'data-email="([^"]+)"',  # data-email attribute
+        r'"([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})"',  # Generic email in quotes
     ]
     for pattern in patterns:
         matches = re.findall(pattern, html)
@@ -468,6 +479,7 @@ def extract_cookies_via_cdp(
     wait_for_login: bool = True,
     login_timeout: int = 300,
     profile_name: str = "default",
+    clear_profile: bool = False,
 ) -> dict[str, Any]:
     """Extract cookies and tokens from Chrome via CDP.
     
@@ -479,6 +491,7 @@ def extract_cookies_via_cdp(
         wait_for_login: If True, wait for user to log in
         login_timeout: Max seconds to wait for login
         profile_name: NLM profile name (each gets its own Chrome user-data-dir)
+        clear_profile: If True, delete the Chrome user-data-dir before launching
     
     Returns:
         Dict with cookies, csrf_token, session_id, and email
@@ -486,10 +499,20 @@ def extract_cookies_via_cdp(
     Raises:
         AuthenticationError: If extraction fails
     """
+    if clear_profile:
+        from notebooklm_tools.utils.config import get_chrome_profile_dir
+        import shutil
+        profile_dir = get_chrome_profile_dir(profile_name)
+        if profile_dir.exists():
+            shutil.rmtree(profile_dir, ignore_errors=True)
+            
     # Check if Chrome is running with debugging
     # First, try to find an existing instance on any port in our range
     reused_existing = False
-    existing_port, debugger_url = find_existing_nlm_chrome()
+    existing_port, debugger_url = None, None
+    if not clear_profile:
+        existing_port, debugger_url = find_existing_nlm_chrome()
+        
     if existing_port:
         port = existing_port
         reused_existing = True
@@ -613,17 +636,19 @@ def extract_cookies_from_page(
             hint="Make sure you're fully logged in.",
         )
 
-    # Get page HTML for CSRF, session ID, and email
+    # Get page HTML for CSRF, session ID, email, and build label
     html = get_page_html(ws_url)
     csrf_token = extract_csrf_token(html)
     session_id = extract_session_id(html)
     email = extract_email(html)
+    build_label = extract_build_label(html)
 
     return {
         "cookies": cookies,
         "csrf_token": csrf_token,
         "session_id": session_id,
         "email": email,
+        "build_label": build_label,
     }
 
 

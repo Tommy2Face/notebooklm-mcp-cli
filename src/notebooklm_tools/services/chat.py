@@ -3,6 +3,7 @@
 from typing import TypedDict, Optional
 
 from ..core.client import NotebookLMClient
+from ..core.conversation import QueryRejectedError
 from .errors import ValidationError, ServiceError
 
 VALID_GOALS = ("default", "learning_guide", "custom")
@@ -15,6 +16,7 @@ class QueryResult(TypedDict):
     answer: str
     conversation_id: Optional[str]
     sources_used: list
+    citations: dict
 
 
 class ConfigureResult(TypedDict):
@@ -64,6 +66,15 @@ def query(
             conversation_id=conversation_id,
             timeout=timeout,
         )
+    except QueryRejectedError as e:
+        raise ServiceError(
+            f"Query failed: {e}",
+            user_message=(
+                f"{e}. This may indicate account-level restrictions on "
+                "programmatic access. Try re-authenticating with 'nlm login' "
+                "or using a different account."
+            ),
+        )
     except Exception as e:
         raise ServiceError(f"Query failed: {e}")
 
@@ -72,6 +83,7 @@ def query(
             "answer": result.get("answer", ""),
             "conversation_id": result.get("conversation_id"),
             "sources_used": result.get("sources_used", []),
+            "citations": result.get("citations", {}),
         }
 
     raise ServiceError(

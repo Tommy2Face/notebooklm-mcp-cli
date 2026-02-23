@@ -6,12 +6,44 @@ and conversation-related operations.
 """
 
 import json
+import logging
 import os
 import urllib.parse
 from typing import Any
 
 from .base import BaseClient
 from .data_types import ConversationTurn
+from .errors import NotebookLMError
+
+logger = logging.getLogger("notebooklm_mcp.api")
+
+GOOGLE_ERROR_CODES = {
+    1: "CANCELLED",
+    2: "UNKNOWN",
+    3: "INVALID_ARGUMENT",
+    4: "DEADLINE_EXCEEDED",
+    5: "NOT_FOUND",
+    7: "PERMISSION_DENIED",
+    8: "RESOURCE_EXHAUSTED",
+    13: "INTERNAL",
+    14: "UNAVAILABLE",
+    16: "UNAUTHENTICATED",
+}
+
+
+class QueryRejectedError(NotebookLMError):
+    """Raised when Google returns an error response instead of an answer."""
+
+    def __init__(self, error_code: int, error_type: str = "", raw_detail: str = ""):
+        code_name = GOOGLE_ERROR_CODES.get(error_code, "UNKNOWN")
+        msg = f"Google rejected the query (error code {error_code}: {code_name})"
+        if error_type:
+            msg += f" [{error_type}]"
+        super().__init__(msg)
+        self.error_code = error_code
+        self.code_name = code_name
+        self.error_type = error_type
+        self.raw_detail = raw_detail
 
 
 class ConversationMixin(BaseClient):
@@ -114,6 +146,8 @@ class ConversationMixin(BaseClient):
             Dict with:
             - answer: The AI's response text
             - conversation_id: ID to use for follow-up questions
+            - sources_used: List of source IDs cited in the answer
+            - citations: Dict mapping citation number to source ID (1-indexed)
             - turn_number: Which turn this is in the conversation (1 = first)
             - is_follow_up: Whether this was a follow-up query
             - raw_response: The raw parsed response (for debugging)
@@ -165,8 +199,8 @@ class ConversationMixin(BaseClient):
 
         self._reqid_counter += 100000  # Increment counter
         url_params = {
-            "bl": os.environ.get("NOTEBOOKLM_BL", "boq_labs-tailwind-frontend_20260108.06_p0"),
-            "hl": "en",
+            "bl": os.environ.get("NOTEBOOKLM_BL") or getattr(self, "_bl", "") or self._BL_FALLBACK,
+            "hl": os.environ.get("NOTEBOOKLM_HL", "en"),
             "_reqid": str(self._reqid_counter),
             "rt": "c",
         }
@@ -179,8 +213,10 @@ class ConversationMixin(BaseClient):
         response = client.post(url, content=body, timeout=timeout)
         response.raise_for_status()
 
+        logger.debug("Raw query response (first 2000 chars): %s", response.text[:2000])
+
         # Parse streaming response
-        answer_text = self._parse_query_response(response.text)
+        answer_text, citation_data = self._parse_query_response(response.text)
 
         # Cache this turn for future follow-ups (only if we got an answer)
         if answer_text:
@@ -193,9 +229,11 @@ class ConversationMixin(BaseClient):
         return {
             "answer": answer_text,
             "conversation_id": conversation_id,
+            "sources_used": citation_data.get("sources_used", []),
+            "citations": citation_data.get("citations", {}),
             "turn_number": turn_number,
             "is_follow_up": not is_new_conversation,
-            "raw_response": response.text[:1000] if response.text else "",  # Truncate for debugging
+            "raw_response": response.text[:1000] if response.text else "",
         }
 
     def _extract_source_ids_from_notebook(self, notebook_data: Any) -> list[str]:
@@ -229,7 +267,7 @@ class ConversationMixin(BaseClient):
     # Response Parsing
     # =========================================================================
 
-    def _parse_query_response(self, response_text: str) -> str:
+    def _parse_query_response(self, response_text: str) -> tuple[str, dict]:
         """Parse the streaming query response and extract the final answer.
 
         The query endpoint returns a streaming response with multiple chunks.
@@ -243,12 +281,17 @@ class ConversationMixin(BaseClient):
 
         Strategy: Find the LONGEST chunk that is marked as type 1 (actual answer).
         If no type 1 chunks found, fall back to longest overall.
+        If no answer at all but Google returned an error, raise QueryRejectedError.
 
         Args:
             response_text: Raw response text from the query endpoint
 
         Returns:
-            The extracted answer text, or empty string if parsing fails
+            Tuple of (answer_text, citation_data) where citation_data has
+            'sources_used' and 'citations' keys (or empty dict).
+
+        Raises:
+            QueryRejectedError: If Google returned an error instead of an answer
         """
         # Remove anti-XSSI prefix
         if response_text.startswith(")]}'"):
@@ -257,6 +300,23 @@ class ConversationMixin(BaseClient):
         lines = response_text.strip().split("\n")
         longest_answer = ""
         longest_thinking = ""
+        answer_citation_data: dict = {}
+        detected_errors: list[dict] = []
+
+        def _process_chunk(json_line: str) -> None:
+            nonlocal longest_answer, longest_thinking, answer_citation_data
+            error = self._extract_error_from_chunk(json_line)
+            if error:
+                detected_errors.append(error)
+                return
+            text, is_answer, cdata = self._extract_answer_from_chunk(json_line)
+            if text:
+                if is_answer and len(text) > len(longest_answer):
+                    longest_answer = text
+                    if cdata:
+                        answer_citation_data = cdata
+                elif not is_answer and len(text) > len(longest_thinking):
+                    longest_thinking = text
 
         # Parse chunks - prioritize type 1 (answers) over type 2 (thinking)
         i = 0
@@ -271,51 +331,102 @@ class ConversationMixin(BaseClient):
                 int(line)
                 i += 1
                 if i < len(lines):
-                    json_line = lines[i]
-                    text, is_answer = self._extract_answer_from_chunk(json_line)
-                    if text:
-                        if is_answer and len(text) > len(longest_answer):
-                            longest_answer = text
-                        elif not is_answer and len(text) > len(longest_thinking):
-                            longest_thinking = text
+                    _process_chunk(lines[i])
                 i += 1
             except ValueError:
-                # Not a byte count, try to parse as JSON directly
-                text, is_answer = self._extract_answer_from_chunk(line)
-                if text:
-                    if is_answer and len(text) > len(longest_answer):
-                        longest_answer = text
-                    elif not is_answer and len(text) > len(longest_thinking):
-                        longest_thinking = text
+                _process_chunk(line)
                 i += 1
 
-        # Return answer if found, otherwise fall back to thinking
-        return longest_answer if longest_answer else longest_thinking
+        result = longest_answer if longest_answer else longest_thinking
 
-    def _extract_answer_from_chunk(self, json_str: str) -> tuple[str | None, bool]:
-        """Extract answer text from a single JSON chunk.
+        if not result and detected_errors:
+            err = detected_errors[0]
+            raise QueryRejectedError(
+                error_code=err["code"],
+                error_type=err.get("type", ""),
+                raw_detail=err.get("raw", ""),
+            )
+
+        return result, answer_citation_data
+
+    def _extract_error_from_chunk(self, json_str: str) -> dict | None:
+        """Check if a JSON chunk contains a Google API error.
+
+        Error responses have item[2] as null/None and error info in item[5]:
+          [["wrb.fr", null, null, null, null, [3]]]
+          [["wrb.fr", null, null, null, null, [8, null, [["type.googleapis.com/...Error", [...]]]]]]
+
+        Returns:
+            Dict with 'code', 'type', 'raw' keys if error found, else None
+        """
+        try:
+            data = json.loads(json_str)
+        except json.JSONDecodeError:
+            return None
+
+        if not isinstance(data, list) or len(data) == 0:
+            return None
+
+        for item in data:
+            if not isinstance(item, list) or len(item) < 6:
+                continue
+            if item[0] != "wrb.fr":
+                continue
+            if item[2] is not None:
+                continue
+
+            error_info = item[5]
+            if not isinstance(error_info, list) or len(error_info) == 0:
+                continue
+
+            error_code = error_info[0]
+            if not isinstance(error_code, int):
+                continue
+
+            error_type = ""
+            if len(error_info) > 2 and isinstance(error_info[2], list):
+                for detail in error_info[2]:
+                    if isinstance(detail, list) and len(detail) > 0 and isinstance(detail[0], str):
+                        error_type = detail[0]
+                        break
+
+            return {
+                "code": error_code,
+                "type": error_type,
+                "raw": json_str[:500],
+            }
+
+        return None
+
+    def _extract_answer_from_chunk(self, json_str: str) -> tuple[str | None, bool, dict]:
+        """Extract answer text and citation data from a single JSON chunk.
 
         The chunk structure is:
         [["wrb.fr", null, "<nested_json>", ...]]
 
-        The nested_json contains: [["answer_text", null, [...], null, [type_info]]]
-        where type_info is an array ending with:
-        - 1 = actual answer
-        - 2 = thinking step
+        The nested_json contains:
+        [["answer_text", null, [conv_data], null, [fmt_segments, null, null, source_passages, type_code]]]
+
+        type_code: 1 = actual answer, 2 = thinking step
+        source_passages (at first_elem[4][3]): list of passage entries, each containing
+        the parent source ID at passage[1][5][0][0][0].
 
         Args:
             json_str: A single JSON chunk from the response
 
         Returns:
-            Tuple of (text, is_answer) where is_answer is True for actual answers (type 1)
+            Tuple of (text, is_answer, citation_data) where:
+            - is_answer is True for actual answers (type 1)
+            - citation_data is {"sources_used": [...], "citations": {num: source_id}}
+              or empty dict if no citation data found
         """
         try:
             data = json.loads(json_str)
         except json.JSONDecodeError:
-            return None, False
+            return None, False, {}
 
         if not isinstance(data, list) or len(data) == 0:
-            return None, False
+            return None, False, {}
 
         for item in data:
             if not isinstance(item, list) or len(item) < 3:
@@ -338,16 +449,70 @@ class ConversationMixin(BaseClient):
                 if isinstance(first_elem, list) and len(first_elem) > 0:
                     answer_text = first_elem[0]
                     if isinstance(answer_text, str) and len(answer_text) > 20:
-                        # Check type indicator at first_elem[4][-1]
                         is_answer = False
+                        citation_data: dict = {}
                         if len(first_elem) > 4 and isinstance(first_elem[4], list):
                             type_info = first_elem[4]
-                            # The type is nested: [[...], None, None, None, type_code]
-                            # where type_code is 1 (answer) or 2 (thinking)
                             if len(type_info) > 0 and isinstance(type_info[-1], int):
                                 is_answer = type_info[-1] == 1
-                        return answer_text, is_answer
+                            if is_answer:
+                                citation_data = self._extract_citation_data(type_info)
+                        return answer_text, is_answer, citation_data
                 elif isinstance(first_elem, str) and len(first_elem) > 20:
-                    return first_elem, False
+                    return first_elem, False, {}
 
-        return None, False
+        return None, False, {}
+
+    @staticmethod
+    def _extract_citation_data(type_info: list) -> dict:
+        """Extract source IDs from the citation passages in a type-1 answer chunk.
+
+        The source passages are at type_info[3] (i.e. first_elem[4][3]).
+        Each passage entry: [["passage_id"], [null, null, confidence, ..., [[["SOURCE_ID"], ...]], ...]]
+        The parent source ID is at passage[1][5][0][0][0].
+        Citations in the answer text are 1-indexed into this array.
+
+        Returns:
+            Dict with 'sources_used' (unique source IDs) and
+            'citations' (citation_number -> source_id mapping), or empty dict.
+        """
+        try:
+            if len(type_info) < 4 or not isinstance(type_info[3], list):
+                return {}
+
+            passages = type_info[3]
+            if not passages:
+                return {}
+
+            citations: dict[int, str] = {}
+            seen_sources: dict[str, None] = {}  # ordered set via dict
+
+            for i, passage in enumerate(passages):
+                if not isinstance(passage, list) or len(passage) < 2:
+                    continue
+                detail = passage[1]
+                if not isinstance(detail, list) or len(detail) < 6:
+                    continue
+                source_ref = detail[5]
+                if not isinstance(source_ref, list) or len(source_ref) == 0:
+                    continue
+                first_ref = source_ref[0]
+                if not isinstance(first_ref, list) or len(first_ref) == 0:
+                    continue
+                source_id_wrapper = first_ref[0]
+                if not isinstance(source_id_wrapper, list) or len(source_id_wrapper) == 0:
+                    continue
+                source_id = source_id_wrapper[0]
+                if isinstance(source_id, str):
+                    citations[i + 1] = source_id
+                    seen_sources[source_id] = None
+
+            if not citations:
+                return {}
+
+            return {
+                "sources_used": list(seen_sources.keys()),
+                "citations": citations,
+            }
+        except (IndexError, TypeError):
+            return {}

@@ -90,7 +90,7 @@ nlm status artifacts <notebook>
 | `nlm auth` | Check authentication status (status, list, delete) |
 | `nlm config` | View/edit configuration (show, get, set) |
 | `nlm notebook` | Manage notebooks (list, create, get, describe, rename, delete, query) |
-| `nlm source` | Manage sources (list, add, get, describe, content, delete, stale, sync) |
+| `nlm source` | Manage sources (list, add, get, describe, content, rename, delete, stale, sync) |
 | `nlm chat` | Chat with notebooks (start, configure) |
 | `nlm studio` | Manage artifacts (status, delete) |
 | `nlm research` | Research and discover sources (start, status, import) |
@@ -124,7 +124,7 @@ nlm status artifacts <notebook>
 | `nlm sync` | Sync Drive sources |
 | `nlm content` | Get raw source content |
 | `nlm stale` | List stale Drive sources |
-| `nlm rename` | Rename resources (notebook) |
+| `nlm rename` | Rename resources (notebook, source, studio) |
 | `nlm status` | Check status (artifacts, research) |
 | `nlm configure` | Configure settings (chat) |
 | `nlm set` | Set values (alias, config) |
@@ -237,6 +237,7 @@ nlm source describe <source-id> --json # JSON output
 nlm source content <source-id>         # Raw text content
 nlm source content <source-id> --json  # JSON output
 nlm source content <source-id> --output file.txt  # Export to file
+nlm source rename <source-id> "New Title" --notebook <notebook-id>  # Rename source
 nlm source delete <source-id> --confirm  # Delete source
 nlm source stale <notebook-id>         # List stale Drive sources
 nlm source sync <notebook-id> --confirm  # Sync all stale
@@ -253,6 +254,7 @@ nlm add drive <notebook-id> <doc-id>   # Add Drive source
 nlm get source <source-id>             # Get source metadata
 nlm describe source <source-id>        # AI summary + keywords
 nlm content source <source-id>         # Raw text content
+nlm rename source <source-id> "New Title" --notebook <notebook-id>  # Rename source
 nlm delete source <source-id> --confirm  # Delete source
 nlm list stale-sources <notebook-id>   # List stale Drive sources
 nlm stale sources <notebook-id>        # Alternative: list stale sources

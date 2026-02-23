@@ -33,6 +33,7 @@ mcp = FastMCP(
     instructions="""NotebookLM MCP - Access NotebookLM (notebooklm.google.com).
 
 **Auth:** If you get authentication errors, run `nlm login` via your Bash/terminal tool. This is the automated authentication method that handles everything. Only use save_auth_tokens as a fallback if the CLI fails.
+**Account Switching:** To switch Google Accounts for the MCP server, run `nlm login switch <profile>` in Bash. The MCP server instantly uses the active default profile.
 **Confirmation:** Tools with confirm param require user approval before setting confirm=True.
 **Studio:** After creating audio/video/infographic/slides, poll studio_status for completion.
 
@@ -104,6 +105,7 @@ Environment Variables:
   NOTEBOOKLM_MCP_PATH          MCP endpoint path (default: /mcp)
   NOTEBOOKLM_MCP_STATELESS     Enable stateless mode for scaling (true/false)
   NOTEBOOKLM_MCP_DEBUG         Enable debug logging (true/false)
+  NOTEBOOKLM_HL                Interface language and default artifact language (default: en)
   NOTEBOOKLM_QUERY_TIMEOUT     Query timeout in seconds (default: 120.0)
 
 Examples:

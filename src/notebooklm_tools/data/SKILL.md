@@ -139,7 +139,7 @@ nlm login profile rename <old> <new> # Rename a profile
 
 **Session lifetime**: ~20 minutes. Re-authenticate when commands fail with auth errors.
 
-**Switching default profile**: Use `nlm login switch <name>` to quickly change the default profile without typing `--profile` for every command.
+**Switching MCP Accounts**: The MCP server always uses the active default profile. If you need to switch which Google account the MCP server is communicating with, you MUST use the CLI: run `nlm login switch <name>`. Your next MCP tool call will instantly use the new account.
 
 **Note**: Both MCP and CLI share the same authentication backend, so authenticating with one works for both.
 
@@ -172,7 +172,7 @@ Use `source_add` with these `source_type` values:
 - `file` - Local file upload (`file_path` param)
 - `drive` - Google Drive doc (`document_id` + `doc_type` params)
 
-Other tools: `source_list_drive`, `source_describe`, `source_get_content`, `source_sync_drive` (requires `confirm=True`), `source_delete` (requires `confirm=True`).
+Other tools: `source_list_drive`, `source_describe`, `source_get_content`, `source_rename`, `source_sync_drive` (requires `confirm=True`), `source_delete` (requires `confirm=True`).
 
 #### CLI Commands
 ```bash
@@ -196,6 +196,10 @@ nlm source content <source-id> -o file.txt  # Export to file
 nlm source stale <nb-id>               # List outdated Drive sources
 nlm source sync <nb-id> --confirm      # Sync all stale sources
 nlm source sync <nb-id> --source-ids <ids> --confirm  # Sync specific
+
+# Rename
+nlm source rename <source-id> "New Title" --notebook <nb-id>
+nlm rename source <source-id> "New Title" --notebook <nb-id>  # verb-first
 
 # Deletion
 nlm source delete <source-id> --confirm
@@ -359,7 +363,19 @@ nlm studio delete <nb-id> <artifact-id> --confirm
 
 **Prompt Extraction**: The `studio_status` tool returns a `custom_instructions` field for each artifact. This contains the original focus prompt or custom instructions used to generate that artifact (e.g., the prompt for a "Create Your Own" report, or the focus topic for an Audio Overview). This is useful for retrieving the exact prompt that generated a successful artifact.
 
-### Renaming Artifacts
+### Renaming Resources
+
+#### Rename a Source
+
+**MCP Tool:** `source_rename(notebook_id, source_id, new_title)`
+
+**CLI:**
+```bash
+nlm source rename <source-id> "New Title" --notebook <notebook-id>
+nlm rename source <source-id> "New Title" --notebook <notebook-id>  # verb-first
+```
+
+#### Rename a Studio Artifact
 
 #### MCP Tools
 

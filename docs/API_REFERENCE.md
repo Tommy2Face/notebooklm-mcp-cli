@@ -212,7 +212,7 @@ The `f.req` structure:
 |-------|-------------|
 | `rpcids` | The RPC ID being called |
 | `source-path` | Current page path (e.g., `/notebook/<id>`) |
-| `bl` | Build/version string (e.g., `boq_labs-tailwind-frontend_20251217.10_p0`) |
+| `bl` | Build label, auto-extracted from page HTML (`cfb2h` key). Override via `NOTEBOOKLM_BL` env var. |
 | `f.sid` | Session ID |
 | `hl` | Language code (e.g., `en`) |
 | `_reqid` | Request counter |
@@ -245,6 +245,7 @@ The `f.req` structure:
 | `hizoJc` | Get source details | `[["source_id"], [2], [2]]` |
 | `yR9Yof` | Check source freshness | `[null, ["source_id"], [2]]` - returns `false` if stale |
 | `FLmJqe` | Sync Drive source | `[null, ["source_id"], [2]]` |
+| `b7Wfje` | Rename source | `[null, ["source_id"], [[["new_title"]]]]` - path: `/notebook/<notebook_id>` |
 | `tGMBJ` | Delete source | `[[["source_id"]], [2]]` - deletion is IRREVERSIBLE |
 | `hPTbtc` | Get conversation IDs | `[notebook_id]` |
 | `hT54vc` | User preferences | - |

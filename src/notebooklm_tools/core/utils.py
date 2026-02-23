@@ -17,6 +17,7 @@ RPC_NAMES = {
     "yR9Yof": "check_freshness",
     "FLmJqe": "sync_drive",
     "tGMBJ": "delete_source",
+    "b7Wfje": "rename_source",
     "hPTbtc": "get_conversations",
     "hT54vc": "preferences",
     "ozz5Z": "subscription",

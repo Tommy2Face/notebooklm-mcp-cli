@@ -5,6 +5,49 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.11] - 2026-02-22
+
+### Added
+- **Auto-extract build label (`bl`)** - The `bl` URL parameter is now automatically extracted from the NotebookLM page during `nlm login` and CSRF token refresh, instead of using a hardcoded value that goes stale every few weeks. This keeps API requests current with Google's latest build without any manual steps. The `NOTEBOOKLM_BL` env var still works as an override. The `save_auth_tokens` MCP tool also extracts `bl` from the `request_url` parameter when provided.
+
+### Fixed
+- **`sources_used` now populated in query responses** - The `sources_used` field was always returning `[]` even when the AI's answer contained citation markers like `[1]`, `[2]`. Google's response includes citation-to-source mapping data that was present but never parsed. Query responses now correctly return `sources_used` (list of cited source IDs) and `citations` (dict mapping each citation number to its parent source ID). This also enables the REPL's citation legend feature. Thanks to **@MinhDung2209** for reporting (issue #57).
+
+## [0.3.10] - 2026-02-22
+
+### Added
+- **Source Rename (`source_rename`)** — Rename any source within a notebook via new RPC `b7Wfje`.
+  - MCP tool: `source_rename` with `notebook_id`, `source_id`, and `new_title` params
+  - CLI: `nlm source rename <source-id> <title> --notebook <notebook-id>`
+  - Verb-first alias: `nlm rename source <source-id> <title> --notebook <notebook-id>`
+
+## [0.3.9] - 2026-02-22
+
+### Added
+- **`--clear` flag for `nlm login`** - Added a `--clear` flag that wipes the cached Chrome profile before logging in. This solves an issue where `nlm login` would auto-login to an old, cached account without letting the user switch profiles or emails.
+
+### Fixed
+- **Accurate Email Extraction** - Fixed a bug in `extract_email` where the CLI would sometimes grab a shared note author's email off the dashboard instead of the logged-in user. The regex now prioritizes actual internal Google account fields before falling back to generic matching.
+- **Skipping Migration on Clear** - Fixed an issue where using `--clear` would cause the CLI to mistakenly run a migration step from older CLI versions, reinstating the wrong account profile.
+
+## [0.3.8] - 2026-02-22
+
+### Added
+- **CLI `--debug` Flag** - `nlm --debug <command>` enables debug logging across all CLI commands, showing raw API responses and internal state. Useful for diagnosing API issues.
+
+### Fixed
+- **Google API errors no longer silently swallowed** - When Google returns an error response (e.g., `INVALID_ARGUMENT`, `UserDisplayableError`) instead of an answer, the CLI now surfaces a clear error message instead of returning an empty answer. Previously, queries would succeed with `{'answer': ''}` and no indication of what went wrong. Thanks to **@MinhDung2209** for the detailed debugging that uncovered this (issue #57).
+
+## [0.3.7] - 2026-02-22
+
+### Added
+- **Configurable Interface Language (`NOTEBOOKLM_HL`)** - Set `NOTEBOOKLM_HL` env var to control both the API's `hl` URL parameter and the default artifact creation language. Explicit `--language` flags still take priority. Thanks to **@beausea** for this contribution (PR #59, closes #58).
+
+## [0.3.6] - 2026-02-22
+
+### Added
+- **Query Timeout Flag** - `nlm notebook query` and `nlm query notebook` now accept `--timeout` / `-t` to set query timeout in seconds (default: 120). Useful for long extraction prompts that need more processing time (closes #57).
+
 ## [0.3.5] - 2026-02-21
 
 ### Added
