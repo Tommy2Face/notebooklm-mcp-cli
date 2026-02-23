@@ -20,8 +20,9 @@ COPY pyproject.toml uv.lock* README.md ./
 # Copy source for full install
 COPY src/ src/
 
-# Build virtual environment with project
-RUN uv sync --frozen
+# Build virtual environment with project (frozen lock ensures reproducibility)
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen
 
 # Stage 2: Development
 FROM python:3.12-slim AS development
@@ -30,7 +31,6 @@ WORKDIR /app
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
-    git \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy venv from builder
@@ -63,9 +63,15 @@ CMD ["notebooklm-mcp"]
 FROM python:3.12-slim AS production
 WORKDIR /app
 
+LABEL org.opencontainers.image.title="notebooklm-mcp" \
+      org.opencontainers.image.description="NotebookLM MCP Server" \
+      org.opencontainers.image.version="1.0" \
+      org.opencontainers.image.vendor="Production"
+
 # Install only runtime dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    dumb-init \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy venv from builder
@@ -91,4 +97,5 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://127.0.0.1:8080/health || exit 0
 
+ENTRYPOINT ["dumb-init", "--"]
 CMD ["notebooklm-mcp"]
